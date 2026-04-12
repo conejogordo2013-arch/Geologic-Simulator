@@ -1,0 +1,1527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Tectonic Plate Simulation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #0f172a; color: #f8fafc; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .canvas-container { position: relative; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; background-color: #020617; overflow: hidden; }
+        canvas { image-rendering: pixelated; box-shadow: 0 0 20px rgba(0,0,0,0.8); cursor: crosshair; }
+        .panel { background: rgba(30, 41, 59, 0.95); border-right: 1px solid #334155; border-left: 1px solid #334155; backdrop-filter: blur(10px); }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+        
+        .layer-btn.active { background-color: #3b82f6; color: white; border-color: #60a5fa; }
+        .tool-btn.active { background-color: #10b981; color: white; border-color: #34d399; }
+    </style>
+</head>
+<body class="flex h-screen w-screen">
+
+    <!-- Left Control Panel -->
+    <div class="panel w-80 h-full flex flex-col z-10 shadow-2xl relative custom-scrollbar overflow-y-auto">
+        <div class="p-5 border-b border-slate-700">
+            <h1 class="text-xl font-bold text-blue-400 tracking-wide uppercase">Tectonic Engine</h1>
+            <p class="text-xs text-slate-400 mt-1">v8.5: Enhanced Magma & Stress Yielding</p>
+        </div>
+
+        <div class="p-5 flex-1 flex flex-col gap-6">
+            
+            <!-- Core Controls -->
+            <div>
+                <h2 class="text-sm font-semibold text-slate-300 mb-3 uppercase tracking-wider">Simulation Control</h2>
+                <div class="flex gap-2 mb-3">
+                    <button id="btn-play" class="flex-1 bg-blue-600 hover:bg-blue-500 transition py-2 rounded text-sm font-bold shadow">Play</button>
+                    <button id="btn-pause" class="flex-1 bg-slate-700 hover:bg-slate-600 transition py-2 rounded text-sm font-bold shadow">Pause</button>
+                    <button id="btn-step" class="flex-1 bg-slate-700 hover:bg-slate-600 transition py-2 rounded text-sm font-bold shadow">Step</button>
+                </div>
+                
+                <div class="flex flex-col gap-1">
+                    <div class="flex justify-between text-xs text-slate-400">
+                        <span>Time Scale (Visual Speed)</span>
+                        <span id="lbl-timescale">50,000 yrs/sec</span>
+                    </div>
+                    <input type="range" id="slider-timescale" min="1000" max="2000000" step="1000" value="50000" class="w-full accent-blue-500">
+                </div>
+
+                <div class="flex flex-col gap-1 mt-4">
+                    <div class="flex justify-between text-xs text-slate-400">
+                        <span>Plate Speed Multiplier</span>
+                        <span id="lbl-speed-mult" class="text-green-400 font-bold">1.0x</span>
+                    </div>
+                    <input type="range" id="slider-speed-mult" min="0.1" max="3.0" step="0.1" value="1.0" class="w-full accent-green-500">
+                    <div class="flex justify-between text-xs text-slate-500 mt-1">
+                        <span>Avg Speed:</span>
+                        <span class="text-green-300 font-mono"><span id="lbl-avg-speed">0.0</span> cm/yr</span>
+                    </div>
+                </div>
+
+                <div class="text-xs text-slate-400 mt-3 text-right">Age: <span id="lbl-age" class="text-blue-300 font-mono">0</span> yrs</div>
+            </div>
+
+            <!-- Validation System -->
+            <div>
+                <h2 class="text-sm font-semibold text-slate-300 mb-2 uppercase tracking-wider">Geophysical Status</h2>
+                <div id="validation-box" class="bg-slate-900 border border-slate-700 rounded p-3 text-xs font-mono text-slate-300 h-36 overflow-y-auto custom-scrollbar leading-tight">
+                    Initializing causal grid...
+                </div>
+            </div>
+
+            <!-- Visualization Layers -->
+            <div>
+                <h2 class="text-sm font-semibold text-slate-300 mb-2 uppercase tracking-wider">Map Layers</h2>
+                <div class="grid grid-cols-3 gap-2">
+                    <button class="layer-btn active border border-slate-600 rounded py-1.5 text-[10px] transition font-bold" data-layer="elevation">Elevation</button>
+                    <button class="layer-btn border border-slate-600 rounded py-1.5 text-[10px] transition" data-layer="plates">Plates</button>
+                    <button class="layer-btn border border-slate-600 rounded py-1.5 text-[10px] transition" data-layer="lithosphere">Age & Slabs</button>
+                    <button class="layer-btn border border-slate-600 rounded py-1.5 text-[10px] transition" data-layer="boundaries">Boundaries</button>
+                    <button class="layer-btn border border-slate-600 rounded py-1.5 text-[10px] transition" data-layer="thickness">Crust Thick.</button>
+                    <button class="layer-btn border border-slate-600 rounded py-1.5 text-[10px] transition text-yellow-300" data-layer="stress">Stress Map</button>
+                    <button class="layer-btn border border-slate-600 rounded py-1.5 text-[10px] transition text-orange-400" data-layer="mantle">Mantle Instab</button>
+                    <button class="layer-btn border border-slate-600 rounded py-1.5 text-[10px] transition text-red-400" data-layer="fracture">Fractures</button>
+                    <button class="layer-btn border border-slate-600 rounded py-1.5 text-[10px] transition text-red-500 font-bold" data-layer="magma">Magma Pool</button>
+                </div>
+            </div>
+
+            <!-- Map Editor Tools -->
+            <div>
+                <h2 class="text-sm font-semibold text-slate-300 mb-2 uppercase tracking-wider">Map Editor</h2>
+                <div class="grid grid-cols-2 gap-2 mb-2">
+                    <button class="tool-btn active border border-slate-600 rounded py-1.5 text-xs transition" data-tool="none">View / Pan</button>
+                    <button class="tool-btn border border-slate-600 rounded py-1.5 text-xs transition" data-tool="continent">Draw Continent</button>
+                    <button class="tool-btn border border-slate-600 rounded py-1.5 text-xs transition" data-tool="ocean">Draw Ocean</button>
+                    <button class="tool-btn border border-slate-600 rounded py-1.5 text-xs transition" data-tool="hotspot">Add Hotspot</button>
+                </div>
+                <div class="flex items-center gap-2 mt-2">
+                    <label class="text-xs text-slate-400">Target Plate ID:</label>
+                    <input type="number" id="input-plate-id" min="1" max="15" value="1" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs w-16 text-white">
+                </div>
+            </div>
+
+            <!-- Presets -->
+            <div class="mt-auto pb-4">
+                <h2 class="text-sm font-semibold text-slate-300 mb-2 uppercase tracking-wider">Map Scenarios</h2>
+                <div class="flex flex-col gap-2">
+                    <button id="btn-preset-earth" class="bg-indigo-900 hover:bg-indigo-800 border border-indigo-700 transition py-2 rounded text-xs font-bold shadow text-indigo-100">Earth-like Approximation</button>
+                    <button id="btn-preset-pangea" class="bg-amber-900 hover:bg-amber-800 border border-amber-700 transition py-2 rounded text-xs font-bold shadow text-amber-100">Supercontinent (Pangea)</button>
+                    <button id="btn-preset-ocean" class="bg-cyan-900 hover:bg-cyan-800 border border-cyan-700 transition py-2 rounded text-xs font-bold shadow text-cyan-100">Ocean-Dominated / Chaotic</button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Main Viewport -->
+    <div class="canvas-container flex-1" id="canvas-container">
+        <canvas id="sim-canvas" width="400" height="400"></canvas>
+    </div>
+
+    <!-- Right Control Panel for Dynamic Configuration -->
+    <div class="panel w-96 h-full flex flex-col z-10 shadow-2xl relative custom-scrollbar overflow-y-auto">
+        <div class="p-5 border-b border-slate-700">
+            <h1 class="text-xl font-bold text-purple-400 tracking-wide uppercase">Simulation Controls</h1>
+            <p class="text-xs text-slate-400 mt-1">Live Parameter Control Engine</p>
+        </div>
+
+        <div class="p-5 flex flex-col gap-3 border-b border-slate-700">
+            <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Global Presets</h2>
+            <div class="flex gap-2">
+                <button id="btn-config-realistic" class="flex-1 bg-slate-700 hover:bg-slate-600 transition py-2 rounded text-xs font-bold text-slate-200 shadow">Realistic</button>
+                <button id="btn-config-balanced" class="flex-1 bg-slate-700 hover:bg-slate-600 transition py-2 rounded text-xs font-bold text-slate-200 shadow">Balanced</button>
+                <button id="btn-config-fast" class="flex-1 bg-slate-700 hover:bg-slate-600 transition py-2 rounded text-xs font-bold text-slate-200 shadow">Volcanic</button>
+            </div>
+        </div>
+
+        <div class="p-5 flex-1 flex flex-col gap-4" id="config-sliders-container">
+            <!-- Dynamic sliders will be injected here -->
+        </div>
+    </div>
+
+<script>
+/**
+ * FAST SIMPLEX NOISE IMPLEMENTATION
+ */
+class SimplexNoise {
+    constructor() {
+        this.p = new Uint8Array(256);
+        for (let i = 0; i < 256; i++) this.p[i] = Math.floor(Math.random() * 256);
+        this.perm = new Uint8Array(512);
+        for (let i = 0; i < 512; i++) this.perm[i] = this.p[i & 255];
+        this.grad3 = [[1,1],[-1,1],[1,-1],[-1,-1],[1,0],[-1,0],[1,0],[-1,0],[0,1],[0,-1],[0,1],[0,-1]];
+    }
+    dot(g, x, y) { return g[0]*x + g[1]*y; }
+    noise2D(xin, yin) {
+        let F2 = 0.366025403, G2 = 0.211324865;
+        let s = (xin + yin) * F2, i = Math.floor(xin + s), j = Math.floor(yin + s);
+        let t = (i + j) * G2, X0 = i - t, Y0 = j - t;
+        let x0 = xin - X0, y0 = yin - Y0;
+        let i1 = x0 > y0 ? 1 : 0, j1 = x0 > y0 ? 0 : 1;
+        let x1 = x0 - i1 + G2, y1 = y0 - j1 + G2;
+        let x2 = x0 - 1.0 + 2.0 * G2, y2 = y0 - 1.0 + 2.0 * G2;
+        let ii = i & 255, jj = j & 255;
+        let gi0 = this.perm[ii + this.perm[jj]] % 12;
+        let gi1 = this.perm[ii + i1 + this.perm[jj + j1]] % 12;
+        let gi2 = this.perm[ii + 1 + this.perm[jj + 1]] % 12;
+        let n0 = 0, n1 = 0, n2 = 0;
+        let t0 = 0.5 - x0*x0 - y0*y0; if (t0 >= 0) { t0 *= t0; n0 = t0 * t0 * this.dot(this.grad3[gi0], x0, y0); }
+        let t1 = 0.5 - x1*x1 - y1*y1; if (t1 >= 0) { t1 *= t1; n1 = t1 * t1 * this.dot(this.grad3[gi1], x1, y1); }
+        let t2 = 0.5 - x2*x2 - y2*y2; if (t2 >= 0) { t2 *= t2; n2 = t2 * t2 * this.dot(this.grad3[gi2], x2, y2); }
+        return 70.0 * (n0 + n1 + n2);
+    }
+}
+
+/**
+ * TECTONIC SIMULATION ENGINE v8.5 - MODIFIED WITH REQUESTED CRITICAL RULES
+ */
+const CONFIG = {
+    width: 400,             
+    height: 400,            
+    cellSize: 2000000,      // cm per pixel (20 km)
+    fixedDt: 10000,         // FIXED PHYSICS STEP (10,000 years)
+    
+    rhoMantle: 3.3,         
+    rhoCont: 2.7,           
+    rhoYoungOcean: 2.8,     
+    rhoOldOcean: 3.25,      
+    ageDensityFactor: 0.0005, 
+    
+    baseContThick: 35.0,    
+    baseOceanThick: 7.0,    
+    isoOffset: 5863,        
+
+    tau_iso: 2,           
+    baseErosionRate: 0.00003,  
+    slopeErosionMult: 50,
+    tau_subduct: 5.0,       
+    trenchSubsidenceRate: 0.01, 
+    
+    // --- 1) STRESS SYSTEM PARAMS ---
+    stressAccumulationRate: 1.0,  // Buffed dramatically to reach thresholds
+    tau_stressDissipation: 10.0,  // Slower dissipation   
+    tau_stressDiffusion: 1.5,     // Controlled spread 
+    
+    maxPlates: 32,
+    maxElevCont: 8800,           
+    maxElevOcean: 2000,          
+    
+    // --- 2) STRESS YIELD PARAMS ---
+    stressUpliftK: 0.02,         
+    highStressYield: 40.0,        // Attainable yield point
+    yieldUpliftRate: 0.1,        
+    tau_yieldRelease: 0.05,      
+
+    // --- 3) MAGMA GENERATION PARAMS ---
+    arcMagmaRate: 0.8,            // Boosted 
+    ridgeDivergenceRate: 0.6,     // Boosted 
+    mantleInstabilityGrowth: 2.0, // Buffed heating 
+    mantleCoolingRate: 0.001,     // Reduced suppression   
+    stressToMagmaCoupling: 0.6,      
+    fractureThreshold: 35.0,         
+    
+    // --- 5) NATURAL HOTSPOT PARAMS ---
+    hotspotSpawnThreshold: 8.0,   // Reachable threshold
+    hotspotDecayRate: 0.1,           
+    oceanWeakeningFactor: 2.0,       
+    yieldReleaseFactor: 0.5,
+    
+    // --- 4 & 6) ERUPTION & VISIBILITY SCALING PARAMS ---
+    visualScale: 10.0,               // MANDATORY SCALING LAYER
+    eruptionThreshold: 2.0,          // Magma accumulation required to surface
+    eruptionEfficiency: 0.8          // How much magma converts to elevation
+};
+
+// DYNAMIC CONFIGURATION UI SYSTEM
+const ORIGINAL_CONFIG = JSON.parse(JSON.stringify(CONFIG));
+const PRESETS = {
+    REALISTIC: ORIGINAL_CONFIG,
+    BALANCED: {
+        ...ORIGINAL_CONFIG,
+        fixedDt: 25000,
+        tau_iso: 1.0,
+        baseErosionRate: 0.0001,
+        tau_subduct: 3.0,
+        stressAccumulationRate: 1.5,
+        visualScale: 15.0
+    },
+    FAST: { 
+        ...ORIGINAL_CONFIG,
+        fixedDt: 50000,
+        tau_iso: 0.5,
+        baseErosionRate: 0.0005,
+        tau_subduct: 1.0,
+        stressAccumulationRate: 3.0,
+        mantleInstabilityGrowth: 5.0,
+        visualScale: 20.0,
+        eruptionThreshold: 1.0
+    }
+};
+
+function formatNumber(num) {
+    if (num === 0) return "0.00";
+    let abs = Math.abs(num);
+    if (abs < 0.001 || abs >= 1000000) return num.toExponential(3);
+    if (Number.isInteger(num)) return num.toString();
+    return num.toFixed(Math.max(1, 5 - Math.floor(Math.log10(abs))));
+}
+
+function createSmartSlider(configKey, value) {
+    let absVal = Math.abs(value);
+    let min, max, step, type;
+
+    if (absVal === 0) {
+        min = -1; max = 1; step = 0.01; type = 'linear';
+    } else if (absVal < 0.001) {
+        type = 'log';
+        let logVal = Math.log10(absVal);
+        min = Math.floor(logVal) - 2; 
+        max = Math.ceil(logVal) + 2;
+        step = 0.01;
+    } else if (absVal <= 100) {
+        type = 'linear';
+        min = 0;
+        max = value * 4; 
+        if (absVal <= 1) step = 0.001;
+        else if (absVal <= 10) step = 0.01;
+        else step = 0.1;
+    } else {
+        type = 'linear';
+        min = value * 0.1; 
+        max = value * 5;
+        if (absVal <= 1000) step = 1;
+        else if (absVal <= 100000) step = 10;
+        else step = 1000;
+    }
+
+    if (configKey === 'width' || configKey === 'height' || configKey === 'maxPlates') {
+        min = Math.max(1, Math.floor(value * 0.5));
+        max = Math.ceil(value * 2);
+        step = 1;
+        type = 'linear';
+    }
+    
+    if (configKey === 'visualScale') { min = 1; max = 50; step = 1; type = 'linear'; }
+    if (configKey === 'eruptionThreshold') { min = 0.1; max = 10; step = 0.1; type = 'linear'; }
+
+    return { min, max, step, type };
+}
+
+function generateConfigUI() {
+    const container = document.getElementById('config-sliders-container');
+    container.innerHTML = '';
+    
+    for (const key in CONFIG) {
+        if (typeof CONFIG[key] === 'number') {
+            const params = createSmartSlider(key, CONFIG[key]);
+            
+            const wrapper = document.createElement('div');
+            wrapper.className = 'flex flex-col gap-1';
+            
+            const header = document.createElement('div');
+            header.className = 'flex justify-between items-center text-xs font-mono';
+            
+            const label = document.createElement('span');
+            label.className = 'text-slate-400 truncate max-w-[160px]';
+            label.innerText = key;
+            label.title = key;
+            
+            if (['visualScale', 'eruptionThreshold', 'eruptionEfficiency', 'stressAccumulationRate', 'mantleInstabilityGrowth'].includes(key)) {
+                label.className = 'text-orange-300 truncate max-w-[160px] font-bold';
+            }
+            
+            const valDisplay = document.createElement('span');
+            valDisplay.className = 'text-purple-400 bg-slate-800 px-2 py-0.5 rounded';
+            valDisplay.innerText = formatNumber(CONFIG[key]);
+            
+            header.appendChild(label);
+            header.appendChild(valDisplay);
+            
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.className = 'w-full accent-purple-500 cursor-pointer';
+            slider.min = params.min;
+            slider.max = params.max;
+            slider.step = params.step;
+            
+            if (params.type === 'log') {
+                slider.value = Math.log10(Math.abs(CONFIG[key]));
+            } else {
+                slider.value = CONFIG[key];
+            }
+            
+            slider.addEventListener('input', (e) => {
+                let newVal;
+                if (params.type === 'log') {
+                    newVal = Math.pow(10, parseFloat(e.target.value));
+                    if (CONFIG[key] < 0) newVal = -newVal;
+                } else {
+                    newVal = parseFloat(e.target.value);
+                }
+                CONFIG[key] = newVal;
+                valDisplay.innerText = formatNumber(newVal);
+            });
+            
+            wrapper.appendChild(header);
+            wrapper.appendChild(slider);
+            container.appendChild(wrapper);
+        }
+    }
+}
+
+document.getElementById('btn-config-realistic').addEventListener('click', () => {
+    Object.assign(CONFIG, PRESETS.REALISTIC); generateConfigUI();
+});
+document.getElementById('btn-config-balanced').addEventListener('click', () => {
+    Object.assign(CONFIG, PRESETS.BALANCED); generateConfigUI();
+});
+document.getElementById('btn-config-fast').addEventListener('click', () => {
+    Object.assign(CONFIG, PRESETS.FAST); generateConfigUI();
+});
+
+class Plate {
+    constructor(id) {
+        this.id = id;
+        this.baseVx = 0; this.baseVy = 0;
+        this.vx = 0; this.vy = 0; 
+        this.pullVx = 0; this.pullVy = 0;
+        this.active = false;
+        this.cellCount = 0;
+        this.lastSplitAge = 0; 
+    }
+    setBaseVelocity(vx, vy) {
+        this.baseVx = vx; this.baseVy = vy;
+        this.vx = vx; this.vy = vy;
+    }
+}
+
+class TectonicEngine {
+    constructor(width, height) {
+        this.width = width;
+        this.height = height;
+        this.length = width * height;
+        this.simplex = new SimplexNoise(); 
+        
+        this.targetSpeedMultiplier = 1.0;
+        this.currentSpeedMultiplier = 1.0;
+        this.averageSpeed = 0;
+
+        // Base Fields
+        this.currPlate = new Uint8Array(this.length);
+        this.nextPlate = new Uint8Array(this.length);
+        this.currThick = new Float32Array(this.length);
+        this.nextThick = new Float32Array(this.length);
+        this.currDensity = new Float32Array(this.length);
+        this.nextDensity = new Float32Array(this.length);
+        this.currCrust = new Uint8Array(this.length); 
+        this.nextCrust = new Uint8Array(this.length);
+        this.currElev = new Float32Array(this.length);
+        this.nextElev = new Float32Array(this.length);
+        
+        this.currAge = new Float32Array(this.length);       
+        this.nextAge = new Float32Array(this.length);
+        this.currSubduct = new Float32Array(this.length);   
+        this.nextSubduct = new Float32Array(this.length);
+
+        this.subX = new Float32Array(this.length);
+        this.subY = new Float32Array(this.length);
+        this.nextSubX = new Float32Array(this.length);
+        this.nextSubY = new Float32Array(this.length);
+
+        this.stress = new Float32Array(this.length);
+        this.nextStress = new Float32Array(this.length);
+        this.thicknessDelta = new Float32Array(this.length);
+        this.boundaryType = new Uint8Array(this.length); 
+        this.topoOffset = new Float32Array(this.length); 
+        this.nextTopoOffset = new Float32Array(this.length);
+
+        this.mantleInstability = new Float32Array(this.length);
+        this.fractureZone = new Float32Array(this.length); 
+        
+        this.currMagma = new Float32Array(this.length);
+        this.nextMagma = new Float32Array(this.length);
+
+        this.plates = new Array(CONFIG.maxPlates).fill(null).map((_, i) => new Plate(i));
+        this.hotspots = [];
+        this.age = 0;
+    }
+
+    fbm(x, y, octaves = 3, scale = 0.05) {
+        let value = 0.0, amplitude = 0.5, frequency = scale;
+        for (let i = 0; i < octaves; i++) {
+            value += this.simplex.noise2D(x * frequency, y * frequency) * amplitude;
+            frequency *= 2.0; amplitude *= 0.5;
+        }
+        return value; 
+    }
+
+    clear() {
+        this.currPlate.fill(0); this.currThick.fill(CONFIG.baseOceanThick);
+        this.currDensity.fill(CONFIG.rhoYoungOcean); this.currElev.fill(-4000);
+        this.currCrust.fill(0); this.subX.fill(0); this.subY.fill(0);
+        this.stress.fill(0); this.thicknessDelta.fill(0);
+        this.boundaryType.fill(0); this.topoOffset.fill(0);
+        this.currAge.fill(0); this.currSubduct.fill(0);
+        this.mantleInstability.fill(0); 
+        this.fractureZone.fill(0);
+        this.currMagma.fill(0); 
+        
+        this.hotspots = []; this.age = 0;
+        this.plates.forEach(p => { 
+            p.active = false; p.cellCount = 0; p.setBaseVelocity(0,0); 
+            p.pullVx = 0; p.pullVy = 0; p.lastSplitAge = 0; 
+        });
+    }
+
+    calculateIsostaticElevation(thickness, density) {
+        let densityDiff = Math.max(0.01, CONFIG.rhoMantle - density);
+        return (thickness * densityDiff / CONFIG.rhoMantle) * 1000 - CONFIG.isoOffset;
+    }
+
+    updatePlateVelocities() {
+        this.currentSpeedMultiplier += (this.targetSpeedMultiplier - this.currentSpeedMultiplier) * 0.1;
+        let totalSpeed = 0, activeCount = 0;
+        for (let i = 1; i < CONFIG.maxPlates; i++) {
+            let p = this.plates[i];
+            if (p.active) {
+                let massProxy = Math.max(100, p.cellCount); 
+                let desiredVx = (p.baseVx + p.pullVx / massProxy) * this.currentSpeedMultiplier;
+                let desiredVy = (p.baseVy + p.pullVy / massProxy) * this.currentSpeedMultiplier;
+                
+                let speed = Math.sqrt(desiredVx * desiredVx + desiredVy * desiredVy);
+                if (speed > 0.001) {
+                    let clampedSpeed = Math.max(0.5, Math.min(15.0, speed));
+                    let scale = clampedSpeed / speed;
+                    p.vx = desiredVx * scale; p.vy = desiredVy * scale;
+                    totalSpeed += clampedSpeed;
+                } else {
+                    p.vx = 0; p.vy = 0;
+                }
+                activeCount++;
+                p.pullVx = 0; p.pullVy = 0;
+            }
+        }
+        this.averageSpeed = activeCount > 0 ? (totalSpeed / activeCount) : 0;
+    }
+
+    // --- 5) NATURAL HOTSPOTS (MANDATORY) IMPLEMENTATION HELPER ---
+    createHotspot(x, y, instability) {
+        this.hotspots.push({
+            x: x, 
+            y: y,
+            radius: 3 + instability * 0.2,
+            magmaFlux: instability * 0.5, // Continuous magma supply
+            lifetime: instability * 2.0,
+            isNatural: true,
+            driftX: (Math.random() - 0.5) * 0.2, // Weak lateral movement
+            driftY: (Math.random() - 0.5) * 0.2
+        });
+    }
+
+    generateVoronoiSeed(numPlates, continentalRatio) {
+        this.clear();
+        let seeds = [];
+        for(let i=1; i<=numPlates; i++) {
+            this.plates[i].active = true;
+            this.plates[i].setBaseVelocity((Math.random() * 8 - 4), (Math.random() * 8 - 4));
+            seeds.push({ x: Math.floor(Math.random() * this.width), y: Math.floor(Math.random() * this.height), id: i, isCont: Math.random() < continentalRatio });
+        }
+        for(let y=0; y<this.height; y++) {
+            for(let x=0; x<this.width; x++) {
+                let warpScale = 0.02; let warpMag = 20.0;
+                let wx = x + this.fbm(x, y, 2, warpScale) * warpMag;
+                let wy = y + this.fbm(x + 100, y + 100, 2, warpScale) * warpMag;
+
+                let minDist = Infinity, bestSeed = null;
+                for(let s of seeds) {
+                    let dx = Math.abs(wx - s.x);
+                    if(dx > this.width / 2) dx = this.width - dx;
+                    let dy = Math.abs(wy - s.y);
+                    let dist = dx*dx + dy*dy;
+                    if(dist < minDist) { minDist = dist; bestSeed = s; }
+                }
+                
+                let idx = y * this.width + x;
+                this.currPlate[idx] = bestSeed.id;
+                this.plates[bestSeed.id].cellCount++;
+                
+                if(bestSeed.isCont && minDist < (this.width*this.width * 0.05)) {
+                    this.currCrust[idx] = 1; 
+                    let nThick = this.fbm(x, y, 3, 0.03); 
+                    this.currThick[idx] = CONFIG.baseContThick + 2 + nThick * 10; 
+                    this.currDensity[idx] = CONFIG.rhoCont;
+                    this.currAge[idx] = 1000.0; 
+                } else {
+                    this.currCrust[idx] = 0; 
+                    let nThick = this.fbm(x, y, 2, 0.05);
+                    this.currThick[idx] = CONFIG.baseOceanThick + 1 + nThick * 2; 
+                    this.currAge[idx] = Math.random() * 100; 
+                    this.currDensity[idx] = Math.min(CONFIG.rhoOldOcean, CONFIG.rhoYoungOcean + (this.currAge[idx] * CONFIG.ageDensityFactor));
+                }
+                this.currElev[idx] = this.calculateIsostaticElevation(this.currThick[idx], this.currDensity[idx]);
+            }
+        }
+        this.updatePlateVelocities();
+    }
+
+    generatePangea() {
+        this.clear();
+        this.plates[1].active = true; this.plates[1].setBaseVelocity(1.5, 0.5);
+        this.plates[2].active = true; this.plates[2].setBaseVelocity(-3, 1);
+        this.plates[3].active = true; this.plates[3].setBaseVelocity(-2, -2.5);
+
+        let cx = this.width / 2; let cy = this.height / 2; let radius = this.width * 0.25;
+        for(let y=0; y<this.height; y++) {
+            for(let x=0; x<this.width; x++) {
+                let idx = y * this.width + x;
+                
+                let warpMag = 25.0;
+                let wx = (x - cx) + this.fbm(x, y, 2, 0.02) * warpMag;
+                let wy = (y - cy) + this.fbm(x + 100, y + 100, 2, 0.02) * warpMag;
+                
+                if(wx*wx + wy*wy < radius*radius) {
+                    this.currPlate[idx] = 1; this.currCrust[idx] = 1; 
+                    let nThick = this.fbm(x, y, 3, 0.03);
+                    this.currThick[idx] = CONFIG.baseContThick + 2 + nThick * 10; 
+                    this.currDensity[idx] = CONFIG.rhoCont;
+                    this.currAge[idx] = 1500;
+                } else {
+                    this.currPlate[idx] = (x > cx) ? 2 : 3; this.currCrust[idx] = 0; 
+                    let nThick = this.fbm(x, y, 2, 0.05);
+                    this.currThick[idx] = CONFIG.baseOceanThick + 1 + nThick * 2; 
+                    this.currAge[idx] = 50 + Math.random() * 50; 
+                    this.currDensity[idx] = CONFIG.rhoYoungOcean + (this.currAge[idx] * CONFIG.ageDensityFactor);
+                }
+                this.currElev[idx] = this.calculateIsostaticElevation(this.currThick[idx], this.currDensity[idx]);
+            }
+        }
+        this.updatePlateVelocities();
+    }
+
+    step(dtYears) {
+        this.age += dtYears;
+        
+        for(let i=0; i<this.length; i++) {
+            let p = this.currPlate[i];
+            if(p === 0 || !this.plates[p].active) continue;
+            this.subX[i] += (this.plates[p].vx * dtYears) / CONFIG.cellSize;
+            this.subY[i] += (this.plates[p].vy * dtYears) / CONFIG.cellSize;
+        }
+
+        this.nextPlate.fill(0); this.nextThick.fill(0); this.nextDensity.fill(0);
+        this.nextElev.fill(0); this.nextCrust.fill(0);
+        this.nextSubX.fill(0); this.nextSubY.fill(0);
+        this.nextStress.fill(0); this.nextTopoOffset.fill(0);
+        this.nextAge.fill(0); this.nextSubduct.fill(0);
+        this.nextMagma.fill(0); 
+        this.thicknessDelta.fill(0);
+
+        let cellArrivals = new Uint8Array(this.length);
+
+        for(let y=0; y<this.height; y++) {
+            for(let x=0; x<this.width; x++) {
+                let idx = y * this.width + x;
+                let p = this.currPlate[idx];
+                if(p === 0) continue;
+
+                let moveX = Math.round(this.subX[idx]);
+                let moveY = Math.round(this.subY[idx]);
+                let tx = (x + moveX) % this.width; if(tx < 0) tx += this.width;
+                let ty = y + moveY; if(ty < 0 || ty >= this.height) continue;
+                let tidx = ty * this.width + tx;
+
+                if(cellArrivals[tidx] === 0) {
+                    this.copyCell(idx, tidx, p, moveX, moveY);
+                    cellArrivals[tidx] = 1;
+                } else {
+                    this.resolveCollision(idx, tidx, p, moveX, moveY);
+                }
+            }
+        }
+
+        for(let y=0; y<this.height; y++) {
+            for(let x=0; x<this.width; x++) {
+                let idx = y * this.width + x;
+                if(cellArrivals[idx] === 0) {
+                    let p = this.analyzeNeighborsStrict(x, y).plate;
+                    this.nextPlate[idx] = p;
+                    this.nextCrust[idx] = 0; 
+                    this.nextThick[idx] = CONFIG.baseOceanThick;
+                    this.nextDensity[idx] = CONFIG.rhoYoungOcean; 
+                    this.nextAge[idx] = 0; 
+                    this.nextSubduct[idx] = 0;
+                    this.nextSubX[idx] = 0; this.nextSubY[idx] = 0;
+                    this.nextStress[idx] = 0;
+                    this.nextMagma[idx] = 0; 
+                    
+                    let nRidge = this.fbm(x, y, 2, 0.06); 
+                    this.nextTopoOffset[idx] = 800 + nRidge * 400; 
+                }
+            }
+        }
+
+        this.classifyAndApplyStress(dtYears);
+        this.applyGeology(dtYears);
+
+        this.checkFragmentation();
+        this.cleanupSmallPlates();
+
+        let tPlate = this.currPlate; this.currPlate = this.nextPlate; this.nextPlate = tPlate;
+        let tThick = this.currThick; this.currThick = this.nextThick; this.nextThick = tThick;
+        let tDens = this.currDensity; this.currDensity = this.nextDensity; this.nextDensity = tDens;
+        let tElev = this.currElev; this.currElev = this.nextElev; this.nextElev = tElev;
+        let tCrust = this.currCrust; this.currCrust = this.nextCrust; this.nextCrust = tCrust;
+        let tSubX = this.subX; this.subX = this.nextSubX; this.nextSubX = tSubX;
+        let tSubY = this.subY; this.subY = this.nextSubY; this.nextSubY = tSubY;
+        let tStress = this.stress; this.stress = this.nextStress; this.nextStress = tStress;
+        let tTopo = this.topoOffset; this.topoOffset = this.nextTopoOffset; this.nextTopoOffset = tTopo;
+        let tAge = this.currAge; this.currAge = this.nextAge; this.nextAge = tAge;
+        let tSub = this.currSubduct; this.currSubduct = this.nextSubduct; this.nextSubduct = tSub;
+        let tMagma = this.currMagma; this.currMagma = this.nextMagma; this.nextMagma = tMagma;
+    }
+
+    copyCell(src, dest, p, moveX, moveY) {
+        this.nextPlate[dest] = p;
+        this.nextCrust[dest] = this.currCrust[src];
+        this.nextThick[dest] = this.currThick[src];
+        this.nextDensity[dest] = this.currDensity[src];
+        this.nextElev[dest] = this.currElev[src];
+        this.nextSubX[dest] = this.subX[src] - moveX;
+        this.nextSubY[dest] = this.subY[src] - moveY;
+        this.nextTopoOffset[dest] = this.topoOffset[src] * 0.95; // Trails off cleanly
+        this.nextStress[dest] = this.stress[src];        
+        this.nextAge[dest] = this.currAge[src];
+        this.nextSubduct[dest] = this.currSubduct[src]; 
+        this.nextMagma[dest] = this.currMagma[src]; 
+    }
+
+    resolveCollision(srcIdx, targetIdx, srcPlate, moveX, moveY) {
+        let tPlate = this.nextPlate[targetIdx];
+        if(srcPlate === tPlate) return;
+
+        let sCrust = this.currCrust[srcIdx];
+        let tCrust = this.nextCrust[targetIdx];
+        let sDens = this.currDensity[srcIdx];
+        let tDens = this.nextDensity[targetIdx];
+
+        if (sCrust === 1 && tCrust === 0) {
+            this.copyCell(srcIdx, targetIdx, srcPlate, moveX, moveY);
+        } else if (sCrust === 0 && tCrust === 1) {
+            return;
+        } else if (sCrust === tCrust) {
+            if (sCrust === 1) {
+                if (this.currThick[srcIdx] > this.nextThick[targetIdx]) {
+                    this.copyCell(srcIdx, targetIdx, srcPlate, moveX, moveY);
+                }
+            } else {
+                if (sDens < tDens) {
+                    this.copyCell(srcIdx, targetIdx, srcPlate, moveX, moveY);
+                }
+            }
+        }
+    }
+
+    analyzeNeighborsStrict(x, y) {
+        let counts = {}, dominant = 1, maxC = 0;
+        let dirs = [[0,-1],[0,1],[-1,0],[1,0],[-1,-1],[1,-1],[-1,1],[1,1]];
+        for(let d of dirs) {
+            let nx = (x + d[0] + this.width) % this.width;
+            let ny = y + d[1];
+            if(ny >= 0 && ny < this.height) {
+                let idx = ny * this.width + nx;
+                let p = this.currPlate[idx];
+                if(p !== 0) {
+                    counts[p] = (counts[p] || 0) + 1;
+                    if (counts[p] > maxC) { maxC = counts[p]; dominant = p; }
+                }
+            }
+        }
+        return { plate: dominant };
+    }
+
+    setBoundaryPriority(idx, newType) {
+        let current = this.boundaryType[idx];
+        if (current === 1) return; 
+        if (newType === 1) { this.boundaryType[idx] = 1; return; }
+        if (current === 2) return; 
+        if (newType === 2) { this.boundaryType[idx] = 2; return; }
+        this.boundaryType[idx] = 3; 
+    }
+
+    classifyAndApplyStress(dt) {
+        this.boundaryType.fill(0);
+        let dtMa = dt / 1000000.0;
+
+        for (let y = 1; y < this.height - 1; y++) {
+            for (let x = 1; x < this.width - 1; x++) {
+                let i = y * this.width + x;
+                let p1 = this.nextPlate[i];
+                if (p1 === 0) continue;
+
+                let pRight = this.nextPlate[i + 1];
+                let pDown = this.nextPlate[i + this.width];
+
+                if (pRight !== 0 && pRight !== p1) this.evaluateBoundaryPair(i, i + 1, p1, pRight, 1, 0, dtMa);
+                if (pDown !== 0 && pDown !== p1) this.evaluateBoundaryPair(i, i + this.width, p1, pDown, 0, 1, dtMa);
+            }
+        }
+    }
+
+    evaluateBoundaryPair(idx1, idx2, p1, p2, nx, ny, dtMa) {
+        let v1 = this.plates[p1];
+        let v2 = this.plates[p2];
+        let dvx = v2.vx - v1.vx;
+        let dvy = v2.vy - v1.vy;
+        
+        let speed = Math.sqrt(dvx*dvx + dvy*dvy);
+        if (speed < 0.01) return;
+
+        let dot = dvx * nx + dvy * ny;
+        let threshold = 0.5; 
+        
+        let bType = 3; // Default Transform
+        if (dot < -threshold) bType = 1; // Convergent
+        else if (dot > threshold) bType = 2; // Divergent
+        
+        // --- 1) STRESS SYSTEM (FIX) IMPLEMENTED ---
+        let relativePlateVelocity = speed;
+        let stressAccumulation = relativePlateVelocity * CONFIG.stressAccumulationRate * dtMa;
+        
+        // Boundary amplification
+        if (bType === 1) stressAccumulation *= 2.5; // CONVERGENT
+        else if (bType === 3) stressAccumulation *= 1.5; // TRANSFORM
+        else if (bType === 2) stressAccumulation *= 0.5; // DIVERGENT
+        
+        this.nextStress[idx1] += stressAccumulation;
+        this.nextStress[idx2] += stressAccumulation;
+        // ------------------------------------------
+
+        let cx1 = idx1 % this.width; 
+        let cy1 = Math.floor(idx1 / this.width);
+
+        if (bType === 1) { // Convergent
+            let c1 = this.nextCrust[idx1], c2 = this.nextCrust[idx2];
+            let d1 = this.nextDensity[idx1], d2 = this.nextDensity[idx2];
+
+            if (c1 !== 1 || c2 !== 1) { // Normal subduction
+                let subIdx = -1, overIdx = -1, subPlate = -1, oDirX = 0, oDirY = 0;
+                
+                if (c1 === 0 && c2 === 1) { subIdx = idx1; overIdx = idx2; subPlate = p1; oDirX = nx; oDirY = ny; } 
+                else if (c1 === 1 && c2 === 0) { subIdx = idx2; overIdx = idx1; subPlate = p2; oDirX = -nx; oDirY = -ny; } 
+                else {
+                    if (d1 >= d2) { subIdx = idx1; overIdx = idx2; subPlate = p1; oDirX = nx; oDirY = ny; }
+                    else { subIdx = idx2; overIdx = idx1; subPlate = p2; oDirX = -nx; oDirY = -ny; }
+                }
+
+                if (subIdx !== -1) {
+                    let subDensityDiff = Math.max(0.05, this.nextDensity[subIdx] - this.nextDensity[overIdx]);
+                    let stressPush = 1.0 + (this.nextStress[subIdx] / 100.0);
+                    let subProgressRate = (1.0 / CONFIG.tau_subduct) * dtMa * (speed / 5.0) * (subDensityDiff / 0.4) * stressPush;
+                    
+                    this.nextSubduct[subIdx] += subProgressRate; 
+                    this.nextTopoOffset[subIdx] -= CONFIG.trenchSubsidenceRate * speed * dtMa; 
+                    
+                    let arcOffset = 3; 
+                    let overX = (overIdx % this.width) + oDirX * arcOffset;
+                    let overY = Math.floor(overIdx / this.width) + oDirY * arcOffset;
+                    overX = (overX + this.width) % this.width; 
+                    
+                    if (overY >= 0 && overY < this.height) {
+                        let arcIdx = overY * this.width + overX;
+                        // --- 3) MAGMA GENERATION (FIX) IMPLEMENTED: Subduction ---
+                        if (this.nextPlate[arcIdx] === this.nextPlate[overIdx]) {
+                            let subductionFactor = speed * dtMa;
+                            this.nextMagma[arcIdx] += CONFIG.arcMagmaRate * subductionFactor;
+                        }
+                    }
+
+                    let subDepth = this.nextSubduct[subIdx];
+                    let densityExcess = Math.max(0, this.nextDensity[subIdx] - 2.8); 
+                    this.plates[subPlate].pullVx += oDirX * subDepth * densityExcess * 50.0;
+                    this.plates[subPlate].pullVy += oDirY * subDepth * densityExcess * 50.0;
+                }
+            }
+        } else if (bType === 2) { // Divergent (Ridge)
+            let dMod = Math.max(0.2, 1.0 + this.fbm(cx1, cy1, 1, 0.1) * 0.5);
+            this.nextTopoOffset[idx1] += CONFIG.ridgeDivergenceRate * dtMa * dMod * 50.0;
+            this.nextTopoOffset[idx2] += CONFIG.ridgeDivergenceRate * dtMa * dMod * 50.0;
+            
+            // --- 3) MAGMA GENERATION (FIX) IMPLEMENTED: Decompression ---
+            let divergenceFactor = speed * dtMa;
+            this.nextMagma[idx1] += CONFIG.ridgeDivergenceRate * divergenceFactor;
+            this.nextMagma[idx2] += CONFIG.ridgeDivergenceRate * divergenceFactor;
+        }
+
+        this.setBoundaryPriority(idx1, bType);
+        this.setBoundaryPriority(idx2, bType);
+    }
+
+    applyGeology(dt) {
+        let dtMa = dt / 1000000.0;
+        
+        let tempInstability = new Float32Array(this.length);
+        for(let y=1; y<this.height-1; y++) {
+            for(let x=1; x<this.width-1; x++) {
+                let i = y * this.width + x;
+                if (this.nextPlate[i] === 0) continue;
+                
+                let densityContrast = Math.max(0, CONFIG.rhoMantle - this.nextDensity[i]);
+                let heatAcc = CONFIG.mantleInstabilityGrowth * (densityContrast / Math.max(5.0, this.nextThick[i]));
+                let cooling = CONFIG.mantleCoolingRate * this.nextAge[i];
+                let stressAcc = this.nextStress[i] * 0.01;
+                
+                let instab = this.mantleInstability[i] + (heatAcc - cooling + stressAcc) * dtMa;
+                
+                let avgN = (this.mantleInstability[i-1] + this.mantleInstability[i+1] + 
+                            this.mantleInstability[i-this.width] + this.mantleInstability[i+this.width]) * 0.25;
+                
+                instab += (avgN - instab) * Math.min(1.0, dtMa * 5.0);
+                tempInstability[i] = Math.max(0, instab);
+                
+                // --- 3) MAGMA GENERATION (FIX) IMPLEMENTED: Mantle Instability ---
+                this.nextMagma[i] += tempInstability[i] * CONFIG.mantleInstabilityGrowth * dtMa;
+            }
+        }
+        for(let i=0; i<this.length; i++) this.mantleInstability[i] = tempInstability[i];
+
+        this.fractureZone.fill(0);
+
+        let tempStress = new Float32Array(this.length);
+        for(let y = 1; y < this.height - 1; y++) {
+            for(let x = 1; x < this.width - 1; x++) {
+                let i = y * this.width + x;
+                if (this.nextPlate[i] === 0) continue;
+                
+                let s = this.nextStress[i];
+                
+                // --- 1) STRESS SYSTEM (FIX) IMPLEMENTED: Diffusion & Dissipation ---
+                // Controlled Laplacian Diffusion
+                let laplacian = (this.nextStress[i-1] + this.nextStress[i+1] + 
+                                 this.nextStress[i-this.width] + this.nextStress[i+this.width] - 4 * s);
+                s += laplacian * (1.0 / CONFIG.tau_stressDiffusion) * dtMa;
+                
+                // LIMIT dissipation
+                s -= s * (1.0 / CONFIG.tau_stressDissipation * 0.3) * dtMa;
+                
+                tempStress[i] = Math.max(0, s);
+                
+                // --- 2) STRESS → UPLIFT COUPLING IMPLEMENTED ---
+                let uplift = 0;
+                
+                if (s > CONFIG.highStressYield) {
+                    uplift += Math.pow(s - CONFIG.highStressYield, 2) * CONFIG.yieldUpliftRate * dtMa;
+                }
+                uplift += s * CONFIG.stressUpliftK * dtMa;
+                
+                if (uplift > 0) {
+                    // --- 6) VISIBILITY SCALING (IMPORTANT) IMPLEMENTED ---
+                    let finalElevation = uplift * CONFIG.visualScale;
+                    
+                    this.thicknessDelta[i] += finalElevation * 0.05; 
+                    this.nextTopoOffset[i] += finalElevation * 50.0;
+                }
+            }
+        }
+        for(let i=0; i<this.length; i++) { this.nextStress[i] = tempStress[i]; }
+
+        for (let i = 0; i < this.length; i++) {
+            if (this.nextPlate[i] === 0) continue;
+            
+            let isOcean = this.nextCrust[i] === 0;
+            let stress = this.nextStress[i];
+            
+            let weakness = isOcean ? (50.0 / (this.nextAge[i] + 5.0)) * CONFIG.oceanWeakeningFactor + stress * 0.8 : stress * 0.3;
+            
+            if (stress > CONFIG.fractureThreshold || weakness > CONFIG.fractureThreshold) {
+                this.fractureZone[i] = 1.0;
+                let releasedStress = stress * CONFIG.yieldReleaseFactor;
+                this.nextStress[i] -= releasedStress;
+                this.nextMagma[i] += releasedStress * CONFIG.stressToMagmaCoupling;
+            }
+
+            // --- 4) MAGMA → SURFACE (CRITICAL FIX) IMPLEMENTED ---
+            if (this.nextMagma[i] > CONFIG.eruptionThreshold) {
+                let elevationUplift = this.nextMagma[i] * CONFIG.eruptionEfficiency;
+                
+                // --- 6) VISIBILITY SCALING (IMPORTANT) IMPLEMENTED ---
+                let finalElevation = elevationUplift * CONFIG.visualScale;
+                
+                this.thicknessDelta[i] += finalElevation * 0.1;
+                this.nextTopoOffset[i] += finalElevation * 100.0;
+                
+                this.nextMagma[i] *= 0.3; // Partial release
+                
+                if (isOcean && this.nextMagma[i] > 2.0) {
+                    this.nextAge[i] *= 0.5;
+                }
+            }
+        }
+
+        // --- 5) NATURAL HOTSPOTS (MANDATORY) IMPLEMENTED ---
+        for(let y=5; y<this.height-5; y+=4) {
+            for(let x=5; x<this.width-5; x+=4) {
+                let i = y * this.width + x;
+                
+                if (this.mantleInstability[i] > CONFIG.hotspotSpawnThreshold) {
+                    let tooClose = false;
+                    for(let h of this.hotspots) {
+                        let dx = h.x - x, dy = h.y - y;
+                        if (dx*dx + dy*dy < 400) { tooClose = true; break; }
+                    }
+                    
+                    if (!tooClose) {
+                        this.createHotspot(x, y, this.mantleInstability[i]);
+                        this.mantleInstability[i] *= 0.1; // heavily deplete local instability
+                    }
+                }
+            }
+        }
+        
+        for (let h = this.hotspots.length - 1; h >= 0; h--) {
+            let hotspot = this.hotspots[h];
+            
+            if (hotspot.isNatural || hotspot.lifetime !== undefined) {
+                hotspot.lifetime -= dtMa;
+                hotspot.magmaFlux *= Math.exp(-CONFIG.hotspotDecayRate * dtMa);
+                
+                // Weak lateral movement (Mantle reference frame drift)
+                if (hotspot.isNatural) {
+                    hotspot.x = (hotspot.x + hotspot.driftX + this.width) % this.width;
+                    hotspot.y += hotspot.driftY;
+                    if (hotspot.y < 0) hotspot.y = 0;
+                    if (hotspot.y >= this.height) hotspot.y = this.height - 1;
+                }
+
+                if (hotspot.lifetime <= 0 || hotspot.magmaFlux < 0.05) {
+                    this.hotspots.splice(h, 1);
+                    continue;
+                }
+            } else {
+                hotspot.magmaFlux = hotspot.intensity * 20.0;
+            }
+            
+            let rInt = Math.ceil(hotspot.radius);
+            for(let dy = -rInt; dy <= rInt; dy++) {
+                for(let dx = -rInt; dx <= rInt; dx++) {
+                    if(dx*dx + dy*dy <= hotspot.radius*hotspot.radius) {
+                        let nx = (Math.floor(hotspot.x) + dx + this.width) % this.width;
+                        let ny = Math.floor(hotspot.y) + dy;
+                        if(ny>=0 && ny<this.height) {
+                            let idx = ny * this.width + nx;
+                            let dist = Math.sqrt(dx*dx + dy*dy);
+                            let intensity = 1.0 - (dist / hotspot.radius);
+                            
+                            if (intensity > 0) {
+                                let magmaInj = hotspot.magmaFlux * intensity * dtMa;
+                                this.nextMagma[idx] += magmaInj;
+                                this.mantleInstability[idx] = Math.max(0, this.mantleInstability[idx] - magmaInj * 0.1);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let tempDelta = new Float32Array(this.length);
+        for(let iter = 0; iter < 4; iter++) { 
+            for(let y=1; y<this.height-1; y++) {
+                for(let x=1; x<this.width-1; x++) {
+                    let i = y * this.width + x;
+                    if(this.thicknessDelta[i] > 0) {
+                        let d = this.thicknessDelta[i];
+                        let spread = d * 0.18; 
+                        let retain = d * 0.28; 
+                        tempDelta[i] += retain; 
+                        tempDelta[i-1] += spread; tempDelta[i+1] += spread;
+                        tempDelta[i-this.width] += spread; tempDelta[i+this.width] += spread;
+                        this.thicknessDelta[i] = 0; 
+                    }
+                }
+            }
+            for(let j=0; j<this.length; j++) { this.thicknessDelta[j] = tempDelta[j]; tempDelta[j] = 0; }
+        }
+
+        for(let i=0; i<this.length; i++) {
+            if(this.nextPlate[i] === 0) continue;
+
+            this.nextThick[i] += this.thicknessDelta[i];
+            this.thicknessDelta[i] = 0;
+
+            this.nextAge[i] += dtMa; 
+            if (this.nextCrust[i] === 0) {
+                this.nextDensity[i] = CONFIG.rhoYoungOcean + (this.nextAge[i] * CONFIG.ageDensityFactor);
+                if (this.nextDensity[i] > CONFIG.rhoOldOcean) this.nextDensity[i] = CONFIG.rhoOldOcean;
+            } else {
+                this.nextDensity[i] = CONFIG.rhoCont;
+            }
+
+            if(this.nextSubduct[i] > 0) {
+                if (this.nextSubduct[i] >= 1.0 || this.nextElev[i] < -12000) {
+                    this.nextPlate[i] = 0; 
+                    this.nextSubduct[i] = 0;
+                    this.nextAge[i] = 0; 
+                    this.nextCrust[i] = 0;
+                    this.nextThick[i] = CONFIG.baseOceanThick;
+                    this.nextTopoOffset[i] = 0;
+                    this.nextMagma[i] = 0;
+                    continue; 
+                }
+            }
+
+            if (this.nextCrust[i] === 0 && this.nextThick[i] > 20.0) {
+                this.nextCrust[i] = 1; 
+                this.nextDensity[i] = CONFIG.rhoCont;
+                this.nextAge[i] = 100; 
+            }
+            
+            if(this.nextCrust[i] === 1 && this.nextThick[i] < 12.0 && this.nextStress[i] > 2.0) {
+                this.nextCrust[i] = 0; 
+                this.nextDensity[i] = CONFIG.rhoYoungOcean; 
+                this.nextAge[i] = 0; 
+            }
+        }
+
+        let smoothedThick = new Float32Array(this.length);
+        for(let y=1; y<this.height-1; y++) {
+            for(let x=1; x<this.width-1; x++) {
+                let i = y * this.width + x;
+                let t = this.nextThick[i];
+                let sum = t * 0.6 + 
+                          this.nextThick[i-1] * 0.1 + 
+                          this.nextThick[i+1] * 0.1 + 
+                          this.nextThick[i-this.width] * 0.1 + 
+                          this.nextThick[i+this.width] * 0.1;
+                
+                if (t > sum * 1.2) smoothedThick[i] = t;
+                else smoothedThick[i] = sum;
+            }
+        }
+
+        for(let i=0; i<this.length; i++) {
+            if(this.nextPlate[i] !== 0) {
+                this.nextThick[i] = smoothedThick[i];
+
+                let targetElev = this.calculateIsostaticElevation(this.nextThick[i], this.nextDensity[i]);
+                targetElev += this.nextTopoOffset[i];
+
+                let maxElev = this.nextCrust[i] === 1 ? CONFIG.maxElevCont : CONFIG.maxElevOcean;
+                if (targetElev > maxElev) targetElev = maxElev;
+
+                this.nextElev[i] += (targetElev - this.nextElev[i]) * Math.min(1.0, dtMa / CONFIG.tau_iso);
+
+                if(this.nextElev[i] > 0) {
+                    let x = i % this.width; let y = Math.floor(i / this.width);
+                    
+                    let elevN = (y > 0) ? this.nextElev[i - this.width] : this.nextElev[i];
+                    let elevS = (y < this.height - 1) ? this.nextElev[i + this.width] : this.nextElev[i];
+                    let elevE = (x < this.width - 1) ? this.nextElev[i + 1] : this.nextElev[i];
+                    let elevW = (x > 0) ? this.nextElev[i - 1] : this.nextElev[i];
+                    
+                    let maxDiff = Math.max(
+                        Math.abs(this.nextElev[i] - elevN), Math.abs(this.nextElev[i] - elevS),
+                        Math.abs(this.nextElev[i] - elevE), Math.abs(this.nextElev[i] - elevW)
+                    );
+                    
+                    let slopeProxy = maxDiff / (CONFIG.cellSize / 100); 
+                    let elevationFactor = Math.max(0, this.nextElev[i] / 1000.0);
+                    
+                    let erodedMeters = dtMa * CONFIG.baseErosionRate * (1.0 + elevationFactor + slopeProxy * CONFIG.slopeErosionMult);
+                    let thickLost = erodedMeters / 1000.0;
+                    
+                    if(this.nextCrust[i] === 1) thickLost *= 0.4; 
+                    this.nextThick[i] -= thickLost;
+                    if(this.nextThick[i] < 2.0) this.nextThick[i] = 2.0; 
+                }
+            }
+        }
+    }
+
+    checkFragmentation() {
+        for(let i=1; i<CONFIG.maxPlates; i++) {
+            let p = this.plates[i];
+            if(p.active && (this.age - p.lastSplitAge > 15000000) && p.cellCount > 2000) {
+                let maxS = 0, maxIdx = -1;
+                for(let j=0; j<this.length; j++) {
+                    if(this.nextPlate[j] === i && this.nextStress[j] > maxS) { maxS = this.nextStress[j]; maxIdx = j; }
+                }
+                if(maxS > 20.0) {
+                    let newId = this.plates.findIndex(pl => !pl.active);
+                    if(newId !== -1) {
+                        this.plates[newId].active = true;
+                        this.plates[newId].lastSplitAge = this.age; p.lastSplitAge = this.age;
+                        this.plates[newId].setBaseVelocity(p.baseVx + (Math.random()*6-3), p.baseVy + (Math.random()*6-3));
+                        let cx = maxIdx % this.width, cy = Math.floor(maxIdx / this.width), radius = 15;
+                        for(let dy=-radius; dy<=radius; dy++) {
+                            for(let dx=-radius; dx<=radius; dx++) {
+                                if(dx*dx + dy*dy <= radius*radius) {
+                                    let nx = (cx + dx + this.width) % this.width; let ny = cy + dy;
+                                    if(ny>=0 && ny<this.height) {
+                                        let nIdx = ny * this.width + nx;
+                                        if(this.nextPlate[nIdx] === i) { this.nextPlate[nIdx] = newId; this.nextStress[nIdx] = 0; }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    cleanupSmallPlates() {
+        for(let i=1; i<CONFIG.maxPlates; i++) this.plates[i].cellCount = 0;
+        for(let i=0; i<this.length; i++) if(this.nextPlate[i] !== 0) this.plates[this.nextPlate[i]].cellCount++;
+        for(let i=1; i<CONFIG.maxPlates; i++) if(this.plates[i].active && this.plates[i].cellCount > 0 && this.plates[i].cellCount < 30) this.plates[i].active = false; 
+    }
+
+    validate() {
+        let maxThick = 0, contCells = 0, totalCells = 0, subductingCells = 0, activeMagma = 0;
+        for(let i=0; i<this.length; i++) {
+            if(this.currPlate[i] !== 0) {
+                totalCells++;
+                if(this.currCrust[i] === 1) contCells++;
+                if(this.currThick[i] > maxThick) maxThick = this.currThick[i];
+                if(this.currSubduct[i] > 0) subductingCells++;
+                if(this.currMagma[i] > 0.1) activeMagma++; 
+            }
+        }
+        let contRatio = totalCells > 0 ? ((contCells / totalCells) * 100).toFixed(1) : 0;
+        let activePlates = this.plates.filter(p => p.active).length;
+        
+        return [
+            `<span class="text-blue-300">Stress Dynamics Active</span>`,
+            `Active Plates: <span class="text-white">${activePlates}</span>`,
+            `Continental Vol: <span class="text-white">${contRatio}%</span>`,
+            `Max Crust Thick: <span class="text-white">${maxThick.toFixed(1)} km</span>`,
+            `Sinking Slabs: <span class="text-slate-400 font-bold">${subductingCells}</span>`,
+            `Active Hotspots: <span class="text-orange-400 font-bold">${this.hotspots.length}</span>`,
+            `Magma Pools: <span class="text-red-500 font-bold">${activeMagma}</span>`
+        ].join("<br>");
+    }
+}
+
+class Renderer {
+    constructor(canvas, engine) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d', { alpha: false });
+        this.engine = engine;
+        this.imgData = this.ctx.createImageData(engine.width, engine.height);
+        
+        this.mode = 'elevation';
+        this.plateColors = [
+            [0,0,0], [220,38,38], [37,99,235], [22,163,74], [217,119,6], [147,51,234], 
+            [8,145,178], [225,29,72], [13,148,136], [202,138,4], [79,70,229], [192,38,211],
+            [101,163,13], [2,132,199], [219,39,119], [234,88,12]
+        ];
+    }
+
+    getElevationColor(elev) {
+        if (elev < -9000) return [0, 0, 15];       
+        if (elev < -7000) return [0, 10, 30];      
+        if (elev < -4000) return [10, 25, 75];     
+        if (elev < -2000) return [20, 60, 120];    
+        if (elev < -500)  return [35, 100, 160];   
+        if (elev < 0)     return [60, 140, 190];   
+        if (elev < 200)   return [50, 160, 80];    
+        if (elev < 1000)  return [120, 180, 60];   
+        if (elev < 3000)  return [200, 180, 100];  
+        if (elev < 6000)  return [160, 120, 80];   
+        return [240, 240, 240];                    
+    }
+
+    render() {
+        const data = this.imgData.data;
+        const e = this.engine;
+        
+        for(let i=0; i<e.length; i++) {
+            let px = i * 4;
+            let p1 = e.currPlate[i];
+            let r=0, g=0, b=0;
+
+            if(this.mode === 'elevation') {
+                let rgb = this.getElevationColor(e.currElev[i]);
+                r = rgb[0]; g = rgb[1]; b = rgb[2];
+            } 
+            else if(this.mode === 'plates') {
+                let c = this.plateColors[p1 % this.plateColors.length];
+                let shade = (e.currElev[i] + 11000) / 20000; 
+                shade = Math.max(0.2, Math.min(1.0, 0.4 + shade*0.6));
+                r = c[0]*shade; g = c[1]*shade; b = c[2]*shade;
+            }
+            else if(this.mode === 'lithosphere') {
+                if (e.currCrust[i] === 1) {
+                    r=100; g=95; b=90;
+                } else {
+                    let ageFactor = Math.min(1.0, e.currAge[i] / 150.0); 
+                    r=0; g=Math.floor(220*(1-ageFactor)); b=Math.floor(255*(1-ageFactor*0.6));
+                }
+                if(e.currSubduct[i] > 0.05) {
+                    let subFactor = Math.min(1.0, e.currSubduct[i] * 1.5);
+                    r = r*(1-subFactor) + 255*subFactor; g = g*(1-subFactor); b = b*(1-subFactor);
+                }
+            }
+            else if(this.mode === 'thickness') {
+                let t = e.currThick[i];
+                if(t < 15) { r=0; g=t*10; b=100 + t*10; }
+                else if(t < 30) { r=0; g=150 + (t-15)*5; b=250 - (t-15)*15; }
+                else if(t < 45) { r=(t-30)*15; g=200; b=0; }
+                else if(t < 60) { r=255; g=200 - (t-45)*10; b=0; }
+                else { r=255; g=50 + (t-60)*5; b=50 + (t-60)*5; }
+            }
+            else if(this.mode === 'stress') { 
+                let s = Math.min(e.stress[i], 15.0) / 15.0;
+                if(s < 0.2) { r=0; g=0; b=s*5*255; } 
+                else if(s < 0.6) { r=(s-0.2)*2.5*255; g=0; b=255 - (s-0.2)*2.5*255; } 
+                else { r=255; g=(s-0.6)*2.5*255; b=g; } 
+            }
+            else if(this.mode === 'boundaries') { 
+                let rgb = this.getElevationColor(e.currElev[i]);
+                r = rgb[0]*0.2; g = rgb[1]*0.2; b = rgb[2]*0.2;
+                if (e.boundaryType[i] === 1) { r=255; g=50; b=50; }       
+                else if (e.boundaryType[i] === 2) { r=50; g=150; b=255; } 
+                else if (e.boundaryType[i] === 3) { r=255; g=200; b=0; }  
+            }
+            else if(this.mode === 'mantle') {
+                let m = e.mantleInstability[i] / (CONFIG.hotspotSpawnThreshold * 1.5);
+                m = Math.min(1.0, Math.max(0, m));
+                r = m * 255; g = m * m * 150; b = 0;
+            }
+            else if(this.mode === 'fracture') {
+                if (e.fractureZone[i] > 0) { r=255; g=30; b=30; } 
+                else { r=10; g=15; b=20; }
+            }
+            else if(this.mode === 'magma') {
+                let m = e.currMagma[i] * 5.0; 
+                if (m > 0) {
+                    m = Math.min(1.0, m);
+                    r = 100 + m*155; g = m*120; b = m*30;
+                } else { r=5; g=5; b=10; }
+            }
+
+            data[px] = r; data[px+1] = g; data[px+2] = b; data[px+3] = 255;
+        }
+
+        this.ctx.putImageData(this.imgData, 0, 0);
+
+        if(this.mode === 'elevation' || this.mode === 'plates') {
+            this.ctx.fillStyle = 'rgba(255, 80, 0, 0.7)';
+            for(let h of e.hotspots) {
+                this.ctx.beginPath(); this.ctx.arc(h.x, h.y, h.radius, 0, Math.PI*2); this.ctx.fill();
+            }
+        }
+        
+        if(this.mode === 'plates' || this.mode === 'boundaries' || this.mode === 'lithosphere') {
+            this.ctx.strokeStyle = 'white'; this.ctx.lineWidth = 1;
+            let cx = new Array(CONFIG.maxPlates).fill(0), cy = new Array(CONFIG.maxPlates).fill(0), counts = new Array(CONFIG.maxPlates).fill(0);
+            for(let i=0; i<e.length; i++) {
+                let p = e.currPlate[i];
+                cx[p] += (i % e.width); cy[p] += Math.floor(i / e.width); counts[p]++;
+            }
+            for(let i=1; i<CONFIG.maxPlates; i++) {
+                if(counts[i] > 100) {
+                    let centerX = cx[i] / counts[i]; let centerY = cy[i] / counts[i];
+                    this.ctx.strokeStyle = 'white';
+                    this.ctx.beginPath(); this.ctx.moveTo(centerX, centerY);
+                    this.ctx.lineTo(centerX + e.plates[i].vx * 5, centerY + e.plates[i].vy * 5);
+                    this.ctx.stroke();
+                    this.ctx.fillStyle = 'white'; this.ctx.fillRect(centerX-1, centerY-1, 3, 3);
+                    this.ctx.font = "10px Arial"; this.ctx.fillText(`P${i}`, centerX+4, centerY-4);
+                }
+            }
+        }
+    }
+}
+
+const canvas = document.getElementById('sim-canvas');
+const container = document.getElementById('canvas-container');
+
+function resizeCanvas() {
+    let size = Math.min(container.clientWidth, container.clientHeight) - 40;
+    canvas.style.width = `${size}px`; canvas.style.height = `${size}px`;
+}
+window.addEventListener('resize', resizeCanvas); resizeCanvas();
+
+const engine = new TectonicEngine(CONFIG.width, CONFIG.height);
+const renderer = new Renderer(canvas, engine);
+
+let isRunning = false; 
+let timeScale = parseInt(document.getElementById('slider-timescale').value); 
+let currentTool = 'none';
+let lastTime = performance.now(); 
+let animationFrameId;
+
+let timeAccumulator = 0;
+
+generateConfigUI();
+engine.generateVoronoiSeed(8, 0.3); 
+updateValidation(); renderer.render();
+
+document.getElementById('btn-play').addEventListener('click', () => { 
+    if(!isRunning) {
+        isRunning = true; 
+        lastTime = performance.now(); 
+        animationFrameId = requestAnimationFrame(loop);
+    }
+});
+
+document.getElementById('btn-pause').addEventListener('click', () => { 
+    isRunning = false; 
+    cancelAnimationFrame(animationFrameId); 
+});
+
+document.getElementById('btn-step').addEventListener('click', () => { 
+    isRunning = false; 
+    cancelAnimationFrame(animationFrameId); 
+    engine.updatePlateVelocities(); 
+    document.getElementById('lbl-avg-speed').innerText = engine.averageSpeed.toFixed(1);
+    engine.step(CONFIG.fixedDt); 
+    document.getElementById('lbl-age').innerText = Math.floor(engine.age).toLocaleString();
+    renderer.render(); 
+});
+
+document.getElementById('slider-timescale').addEventListener('input', (e) => {
+    timeScale = parseInt(e.target.value);
+    document.getElementById('lbl-timescale').innerText = `${timeScale.toLocaleString()} yrs/sec`;
+});
+
+const sliderSpeed = document.getElementById('slider-speed-mult');
+sliderSpeed.addEventListener('input', (e) => {
+    let val = parseFloat(e.target.value);
+    document.getElementById('lbl-speed-mult').innerText = val.toFixed(1) + 'x';
+    engine.targetSpeedMultiplier = val;
+    if(!isRunning) {
+        engine.currentSpeedMultiplier = val; engine.updatePlateVelocities();
+        document.getElementById('lbl-avg-speed').innerText = engine.averageSpeed.toFixed(1);
+        renderer.render();
+    }
+});
+
+document.querySelectorAll('.layer-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        document.querySelectorAll('.layer-btn').forEach(b => b.classList.remove('active'));
+        e.target.classList.add('active');
+        renderer.mode = e.target.dataset.layer;
+        renderer.render();
+    });
+});
+
+document.querySelectorAll('.tool-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+        e.target.classList.add('active');
+        currentTool = e.target.dataset.tool;
+    });
+});
+
+document.getElementById('btn-preset-earth').addEventListener('click', () => { engine.generateVoronoiSeed(8, 0.3); resetSim(); });
+document.getElementById('btn-preset-pangea').addEventListener('click', () => { engine.generatePangea(); resetSim(); });
+document.getElementById('btn-preset-ocean').addEventListener('click', () => { engine.generateVoronoiSeed(15, 0.05); resetSim(); });
+
+function resetSim() {
+    engine.age = 0;
+    timeAccumulator = 0; 
+    engine.targetSpeedMultiplier = parseFloat(sliderSpeed.value);
+    engine.currentSpeedMultiplier = engine.targetSpeedMultiplier;
+    engine.updatePlateVelocities(); updateValidation();
+    document.getElementById('lbl-avg-speed').innerText = engine.averageSpeed.toFixed(1);
+    renderer.render(); document.getElementById('lbl-age').innerText = "0";
+}
+
+function updateValidation() { document.getElementById('validation-box').innerHTML = engine.validate(); }
+
+let isDrawing = false;
+function getMousePos(e) {
+    let rect = canvas.getBoundingClientRect();
+    return {
+        x: Math.floor((e.clientX - rect.left) * (canvas.width / rect.width)),
+        y: Math.floor((e.clientY - rect.top) * (canvas.height / rect.height))
+    };
+}
+
+function applyTool(pos) {
+    if(currentTool === 'none') return;
+    let pid = parseInt(document.getElementById('input-plate-id').value) || 1;
+    if(pid < 1 || pid >= CONFIG.maxPlates) pid = 1;
+
+    if(currentTool === 'hotspot') {
+        engine.hotspots.push({x: pos.x, y: pos.y, radius: 5, intensity: 0.2}); 
+        renderer.render(); currentTool = 'none'; document.querySelector('[data-tool="none"]').click();
+        return;
+    }
+
+    let radius = 8;
+    for(let dy = -radius; dy <= radius; dy++) {
+        for(let dx = -radius; dx <= radius; dx++) {
+            if(dx*dx + dy*dy <= radius*radius) {
+                let nx = (pos.x + dx + engine.width) % engine.width;
+                let ny = pos.y + dy;
+                if(ny >= 0 && ny < engine.height) {
+                    let idx = ny * engine.width + nx;
+                    engine.currPlate[idx] = pid;
+                    
+                    let nThick = engine.fbm(nx, ny, 2, 0.05);
+                    
+                    if(currentTool === 'continent') {
+                        engine.currCrust[idx] = 1; 
+                        engine.currThick[idx] = CONFIG.baseContThick + 2 + nThick * 5; 
+                        engine.currDensity[idx] = CONFIG.rhoCont;
+                        engine.currAge[idx] = 1000;
+                    } else if(currentTool === 'ocean') {
+                        engine.currCrust[idx] = 0; 
+                        engine.currThick[idx] = CONFIG.baseOceanThick + nThick * 1; 
+                        engine.currDensity[idx] = CONFIG.rhoYoungOcean;
+                        engine.currAge[idx] = 0;
+                    }
+                    engine.currElev[idx] = engine.calculateIsostaticElevation(engine.currThick[idx], engine.currDensity[idx]);
+                }
+            }
+        }
+    }
+    updateValidation(); renderer.render();
+}
+
+canvas.addEventListener('mousedown', (e) => { isDrawing = true; applyTool(getMousePos(e)); });
+canvas.addEventListener('mousemove', (e) => { if(isDrawing) applyTool(getMousePos(e)); });
+window.addEventListener('mouseup', () => { isDrawing = false; });
+
+function processAccumulatedTime(simulatedYearsToProcess) {
+    timeAccumulator += simulatedYearsToProcess;
+    
+    let stepsTaken = 0;
+    const MAX_STEPS_PER_FRAME = 200; 
+    
+    while (timeAccumulator >= CONFIG.fixedDt && stepsTaken < MAX_STEPS_PER_FRAME) {
+        engine.step(CONFIG.fixedDt);
+        timeAccumulator -= CONFIG.fixedDt;
+        stepsTaken++;
+    }
+
+    if (stepsTaken >= MAX_STEPS_PER_FRAME) timeAccumulator = 0; 
+    document.getElementById('lbl-age').innerText = Math.floor(engine.age).toLocaleString();
+}
+
+function loop(currentTime) {
+    if(!isRunning) return;
+    
+    let dtReal = (currentTime - lastTime) / 1000;
+    if (dtReal > 0.1) dtReal = 0.1; 
+    
+    lastTime = currentTime;
+    
+    engine.updatePlateVelocities();
+    document.getElementById('lbl-avg-speed').innerText = engine.averageSpeed.toFixed(1);
+    
+    processAccumulatedTime(dtReal * timeScale);
+    
+    renderer.render();
+
+    if(Math.random() < 0.05) updateValidation();
+    animationFrameId = requestAnimationFrame(loop);
+}
+
+lastTime = performance.now();
+engine.updatePlateVelocities();
+document.getElementById('lbl-avg-speed').innerText = engine.averageSpeed.toFixed(1);
+</script>
+</body>
+</html>
