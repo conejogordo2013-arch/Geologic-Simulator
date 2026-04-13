@@ -8,7 +8,7 @@
     <style>
         body { margin: 0; overflow: hidden; background-color: #0f172a; color: #f8fafc; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         .canvas-container { position: relative; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; background-color: #020617; overflow: hidden; }
-        canvas { image-rendering: pixelated; box-shadow: 0 0 20px rgba(0,0,0,0.8); cursor: crosshair; }
+        canvas { image-rendering: pixelated; box-shadow: 0 0 20px rgba(0,0,0,0.8); cursor: crosshair; touch-action: none; }
         .panel { background: rgba(30, 41, 59, 0.95); border-right: 1px solid #334155; border-left: 1px solid #334155; backdrop-filter: blur(10px); }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
@@ -44,7 +44,7 @@
     <div class="panel left-panel w-80 h-full flex flex-col z-10 shadow-2xl relative custom-scrollbar overflow-y-auto">
         <div class="p-5 border-b border-slate-700">
             <h1 class="text-xl font-bold text-blue-400 tracking-wide uppercase">Tectonic Engine</h1>
-            <p class="text-xs text-slate-400 mt-1">v8.5: Enhanced Magma & Stress Yielding</p>
+            <p class="text-xs text-slate-400 mt-1">v9.0: Earth-Grade Dynamics & Validation</p>
             <p class="text-[11px] text-emerald-300 mt-2 font-semibold">Resultados correctos incluso en simulaciones largas.</p>
         </div>
 
@@ -90,6 +90,12 @@
                 </div>
             </div>
 
+            <!-- Color Legend -->
+            <div>
+                <h2 class="text-sm font-semibold text-slate-300 mb-2 uppercase tracking-wider">Color Legend</h2>
+                <div id="legend-box" class="bg-slate-900 border border-slate-700 rounded p-3 text-xs text-slate-200 custom-scrollbar overflow-y-auto h-32"></div>
+            </div>
+
             <!-- Visualization Layers -->
             <div>
                 <h2 class="text-sm font-semibold text-slate-300 mb-2 uppercase tracking-wider">Map Layers</h2>
@@ -116,6 +122,7 @@
                     <button class="tool-btn border border-slate-600 rounded py-1.5 text-xs transition" data-tool="hotspot">Add Hotspot</button>
                     <button class="tool-btn border border-slate-600 rounded py-1.5 text-xs transition text-emerald-300" data-tool="mountain">Raise Mountains</button>
                     <button class="tool-btn border border-slate-600 rounded py-1.5 text-xs transition text-cyan-300" data-tool="trench">Carve Trench</button>
+                    <button class="tool-btn border border-slate-600 rounded py-1.5 text-xs transition text-violet-300" data-tool="smooth">Smooth Terrain</button>
                 </div>
                 <div class="flex items-center gap-2 mt-2">
                     <label class="text-xs text-slate-400">Target Plate ID:</label>
@@ -150,6 +157,7 @@
             <div class="mt-auto pb-4">
                 <h2 class="text-sm font-semibold text-slate-300 mb-2 uppercase tracking-wider">Map Scenarios</h2>
                 <div class="flex flex-col gap-2">
+                    <button id="btn-preset-earth-today" class="bg-emerald-900 hover:bg-emerald-800 border border-emerald-700 transition py-2 rounded text-xs font-bold shadow text-emerald-100">Earth</button>
                     <button id="btn-preset-earth" class="bg-indigo-900 hover:bg-indigo-800 border border-indigo-700 transition py-2 rounded text-xs font-bold shadow text-indigo-100">Earth-like Approximation</button>
                     <button id="btn-preset-pangea" class="bg-amber-900 hover:bg-amber-800 border border-amber-700 transition py-2 rounded text-xs font-bold shadow text-amber-100">Supercontinent (Pangea)</button>
                     <button id="btn-preset-ocean" class="bg-cyan-900 hover:bg-cyan-800 border border-cyan-700 transition py-2 rounded text-xs font-bold shadow text-cyan-100">Ocean-Dominated / Chaotic</button>
@@ -681,6 +689,87 @@ class TectonicEngine {
         this.updatePlateVelocities();
     }
 
+    generateEarthTodayApprox() {
+        this.clear();
+        const plateSeeds = [
+            { id: 1, x: 72, y: 128, vx: -0.4, vy: 0.2 },  // Pacific
+            { id: 2, x: 180, y: 86, vx: 0.6, vy: -0.1 },  // North America
+            { id: 3, x: 210, y: 210, vx: 0.3, vy: 0.4 },  // South America
+            { id: 4, x: 32, y: 92, vx: 0.7, vy: 0.3 },    // Eurasia
+            { id: 5, x: 30, y: 190, vx: 0.2, vy: 0.6 },   // Africa
+            { id: 6, x: 310, y: 260, vx: 0.9, vy: -0.2 }, // Australia
+            { id: 7, x: 350, y: 340, vx: 0.5, vy: 0.0 },  // Antarctica
+            { id: 8, x: 290, y: 140, vx: 0.8, vy: 0.1 },  // Indo-Australian
+            { id: 9, x: 240, y: 150, vx: 0.5, vy: 0.2 },  // Arabian
+            { id: 10, x: 340, y: 110, vx: -0.2, vy: 0.1 } // Philippine
+        ];
+        for (const p of plateSeeds) {
+            this.plates[p.id].active = true;
+            this.plates[p.id].setBaseVelocity(p.vx, p.vy);
+        }
+
+        const wrapDx = (x, cx) => {
+            let dx = Math.abs(x - cx);
+            if (dx > this.width / 2) dx = this.width - dx;
+            return dx;
+        };
+        const inEllipse = (x, y, cx, cy, rx, ry) => {
+            const dx = wrapDx(x, cx) / rx;
+            const dy = (y - cy) / ry;
+            return (dx * dx + dy * dy) <= 1.0;
+        };
+
+        for (let y = 0; y < this.height; y++) {
+            const latNorm = y / this.height;
+            for (let x = 0; x < this.width; x++) {
+                const idx = y * this.width + x;
+
+                let nearest = plateSeeds[0], best = Infinity;
+                for (const s of plateSeeds) {
+                    const dx = wrapDx(x, s.x);
+                    const dy = y - s.y;
+                    const d = dx * dx + dy * dy;
+                    if (d < best) { best = d; nearest = s; }
+                }
+                this.currPlate[idx] = nearest.id;
+                this.plates[nearest.id].cellCount++;
+
+                const isAntarctica = inEllipse(x, y, 350, 335, 120, 45);
+                const isNorthAmerica = inEllipse(x, y, 176, 96, 48, 38) || inEllipse(x, y, 200, 76, 36, 22);
+                const isSouthAmerica = inEllipse(x, y, 215, 208, 30, 52);
+                const isEurasia = inEllipse(x, y, 38, 88, 75, 35) || inEllipse(x, y, 78, 82, 56, 20);
+                const isAfrica = inEllipse(x, y, 30, 188, 34, 48);
+                const isAustralia = inEllipse(x, y, 308, 258, 25, 16);
+                const isGreenland = inEllipse(x, y, 224, 38, 18, 15);
+                const continental = isAntarctica || isNorthAmerica || isSouthAmerica || isEurasia || isAfrica || isAustralia || isGreenland;
+
+                const himalaya = inEllipse(x, y, 90, 120, 22, 7);
+                const andes = inEllipse(x, y, 200, 210, 8, 46);
+                const rockies = inEllipse(x, y, 170, 100, 10, 34);
+                const atlas = inEllipse(x, y, 18, 150, 12, 7);
+                const mountainBoost = (himalaya ? 10 : 0) + (andes ? 9 : 0) + (rockies ? 7 : 0) + (atlas ? 4 : 0);
+
+                if (continental) {
+                    this.currCrust[idx] = 1;
+                    const latCooling = Math.abs(latNorm - 0.5) * 2;
+                    this.currAge[idx] = 25 + this.rand() * 80;
+                    this.currThick[idx] = CONFIG.baseContThick + 4 + this.fbm(x, y, 3, 0.03) * 6 + mountainBoost + latCooling * 2;
+                    this.currDensity[idx] = CONFIG.rhoCont + 0.03 * latCooling;
+                } else {
+                    this.currCrust[idx] = 0;
+                    const ridgeDistance = Math.abs((x / this.width) - 0.5);
+                    this.currAge[idx] = Math.min(180, Math.max(0, ridgeDistance * 180 + this.rand() * 15));
+                    this.currThick[idx] = CONFIG.baseOceanThick + 0.8 + this.fbm(x, y, 2, 0.05) * 1.8;
+                    this.currDensity[idx] = Math.min(CONFIG.rhoOldOcean, CONFIG.rhoYoungOcean + this.currAge[idx] * CONFIG.ageDensityFactor);
+                }
+
+                this.currElev[idx] = this.calculateIsostaticElevation(this.currThick[idx], this.currDensity[idx]);
+                if (continental && isAntarctica) this.currElev[idx] += 400; // ice sheet effect
+            }
+        }
+        this.updatePlateVelocities();
+    }
+
     step(dtYears) {
         this.age += dtYears;
         
@@ -745,6 +834,7 @@ class TectonicEngine {
 
         this.classifyAndApplyStress(dtYears);
         this.applyGeology(dtYears);
+        this.applyClimateModel(dtYears);
 
         this.checkFragmentation();
         this.cleanupSmallPlates();
@@ -762,6 +852,33 @@ class TectonicEngine {
         let tAge = this.currAge; this.currAge = this.nextAge; this.nextAge = tAge;
         let tSub = this.currSubduct; this.currSubduct = this.nextSubduct; this.nextSubduct = tSub;
         let tMagma = this.currMagma; this.currMagma = this.nextMagma; this.nextMagma = tMagma;
+    }
+
+    applyClimateModel(dtYears) {
+        const dtMa = dtYears / 1e6;
+        for (let y = 0; y < this.height; y++) {
+            const latBand = Math.abs((y / this.height) - 0.5) * 2.0; // 0 = equator, 1 = pole
+            for (let x = 0; x < this.width; x++) {
+                const idx = y * this.width + x;
+                if (this.nextPlate[idx] === 0) continue;
+
+                if (this.nextCrust[idx] === 1) {
+                    const humidWeathering = (1.1 - 0.6 * latBand) * dtMa * 0.03;
+                    this.nextThick[idx] = Math.max(2, this.nextThick[idx] - humidWeathering);
+                    if (latBand > 0.72 && this.nextElev[idx] > 1200) {
+                        this.nextThick[idx] = Math.max(2, this.nextThick[idx] - dtMa * 0.04); // glacial carving
+                    }
+                } else {
+                    if (latBand < 0.25) this.nextAge[idx] += dtMa * 0.4; // warm belts cool lithosphere faster
+                    if (latBand > 0.8) this.nextTopoOffset[idx] -= dtMa * 20; // polar deep-water formation tendency
+                }
+
+                this.nextDensity[idx] = this.nextCrust[idx] === 1
+                    ? Math.max(2.6, Math.min(CONFIG.rhoCont + 0.25, this.nextDensity[idx]))
+                    : Math.max(CONFIG.rhoYoungOcean, Math.min(CONFIG.rhoOldOcean, CONFIG.rhoYoungOcean + this.nextAge[idx] * CONFIG.ageDensityFactor));
+                this.nextElev[idx] = this.calculateIsostaticElevation(this.nextThick[idx], this.nextDensity[idx]) + this.nextTopoOffset[idx];
+            }
+        }
     }
 
     sanitizeNextState() {
@@ -1315,7 +1432,14 @@ class TectonicEngine {
         if (avgOceanElev > -800 || avgOceanElev < -6500) issues.push(`Profundidad oceánica media no realista (${avgOceanElev.toFixed(0)} m)`);
         if (avgContDensity >= avgOceanDensity) issues.push(`Densidades invertidas (continente >= océano)`);
 
-        return { ok: issues.length === 0, issues };
+        let earthScore = 100;
+        earthScore -= Math.min(45, issues.length * 12);
+        earthScore -= Math.min(20, Math.abs(contRatio - 0.37) * 100);
+        earthScore -= Math.min(15, Math.abs(avgOceanElev + 3800) / 220);
+        earthScore -= Math.min(15, Math.abs(avgContElev - 700) / 180);
+        earthScore = Math.max(0, Math.round(earthScore));
+
+        return { ok: issues.length === 0, issues, earthScore };
     }
 
     validate() {
@@ -1344,6 +1468,7 @@ class TectonicEngine {
             `Magma Pools: <span class="text-red-500 font-bold">${activeMagma}</span>`,
             `Invalid Cells: <span class="${invalidCells > 0 ? 'text-red-500 font-bold' : 'text-green-400 font-bold'}">${invalidCells}</span>`,
             `Physical Plausibility: <span class="${physical.ok ? 'text-green-300 font-bold' : 'text-red-300 font-bold'}">${physical.ok ? 'PASS' : 'FAIL'}</span>`,
+            `Earth Similarity Score: <span class="text-cyan-300 font-bold">${physical.earthScore}/100</span>`,
             ...(physical.ok ? [] : physical.issues.map(issue => `- <span class="text-red-200">${issue}</span>`))
         ].join("<br>");
     }
@@ -1364,18 +1489,20 @@ class Renderer {
         ];
     }
 
-    getElevationColor(elev) {
-        if (elev < -9000) return [0, 0, 15];       
-        if (elev < -7000) return [0, 10, 30];      
-        if (elev < -4000) return [10, 25, 75];     
-        if (elev < -2000) return [20, 60, 120];    
-        if (elev < -500)  return [35, 100, 160];   
-        if (elev < 0)     return [60, 140, 190];   
-        if (elev < 200)   return [50, 160, 80];    
-        if (elev < 1000)  return [120, 180, 60];   
-        if (elev < 3000)  return [200, 180, 100];  
-        if (elev < 6000)  return [160, 120, 80];   
-        return [240, 240, 240];                    
+    getElevationColor(elev, latNorm = 0.5) {
+        if (elev < -8000) return [1, 12, 43];        // abyssal plain/trench
+        if (elev < -6000) return [3, 35, 76];
+        if (elev < -4000) return [6, 58, 112];
+        if (elev < -2000) return [12, 86, 146];
+        if (elev < -200)  return [38, 126, 184];     // continental slope
+        if (elev < 0)     return [72, 165, 213];     // shelf
+        if (elev < 200)   return [86, 166, 102];     // coastal plains
+        if (elev < 1000)  return [108, 145, 76];     // lowlands
+        if (elev < 2500)  return [145, 123, 80];     // highlands
+        if (elev < 4500)  return [118, 101, 88];     // mountains
+        const polarBoost = Math.abs(latNorm - 0.5) * 2.0;
+        if (polarBoost > 0.72 || elev > 6000) return [244, 248, 252]; // snow/ice caps
+        return [201, 190, 175];
     }
 
     render() {
@@ -1386,9 +1513,10 @@ class Renderer {
             let px = i * 4;
             let p1 = e.currPlate[i];
             let r=0, g=0, b=0;
+            let latNorm = Math.floor(i / e.width) / e.height;
 
             if(this.mode === 'elevation') {
-                let rgb = this.getElevationColor(e.currElev[i]);
+                let rgb = this.getElevationColor(e.currElev[i], latNorm);
                 r = rgb[0]; g = rgb[1]; b = rgb[2];
             } 
             else if(this.mode === 'plates') {
@@ -1424,7 +1552,7 @@ class Renderer {
                 else { r=255; g=(s-0.6)*2.5*255; b=g; } 
             }
             else if(this.mode === 'boundaries') { 
-                let rgb = this.getElevationColor(e.currElev[i]);
+                let rgb = this.getElevationColor(e.currElev[i], latNorm);
                 r = rgb[0]*0.2; g = rgb[1]*0.2; b = rgb[2]*0.2;
                 if (e.boundaryType[i] === 1) { r=255; g=50; b=50; }       
                 else if (e.boundaryType[i] === 2) { r=50; g=150; b=255; } 
@@ -1508,6 +1636,34 @@ document.getElementById('btn-ui-large').addEventListener('click', () => setUiMod
 
 const engine = new TectonicEngine(CONFIG.width, CONFIG.height);
 const renderer = new Renderer(canvas, engine);
+const legendBox = document.getElementById('legend-box');
+
+const LAYER_LEGENDS = {
+    elevation: [
+        ['#010C2B', 'Fosa oceánica (>8 km profundidad)'],
+        ['#0C5692', 'Océano profundo (2–6 km)'],
+        ['#48A5D5', 'Plataforma continental / mar somero'],
+        ['#56A666', 'Llanuras costeras'],
+        ['#6C914C', 'Continente bajo'],
+        ['#917B50', 'Altiplanos y cordilleras'],
+        ['#F4F8FC', 'Nieve/ hielo polar y cumbres altas']
+    ],
+    plates: [['#FFFFFF', 'Cada color representa una placa tectónica distinta']],
+    lithosphere: [['#9B8A7D', 'Corteza continental'], ['#00DFFF', 'Litosfera oceánica joven'], ['#FF4040', 'Subducción activa']],
+    boundaries: [['#FFFFFF', 'Límites convergentes/divergentes/transformantes']],
+    thickness: [['#00AAFF', 'Corteza delgada'], ['#FFA300', 'Corteza media'], ['#FFEBDD', 'Corteza muy gruesa']],
+    stress: [['#00FF66', 'Estrés bajo'], ['#FFBF00', 'Estrés moderado'], ['#FF2020', 'Estrés extremo']],
+    mantle: [['#111111', 'Manto estable'], ['#FF8C00', 'Inestabilidad creciente'], ['#FF0000', 'Inestabilidad crítica']],
+    fracture: [['#002255', 'Sin fracturas'], ['#FFD600', 'Fracturación intermedia'], ['#FFFFFF', 'Fracturación extrema']],
+    magma: [['#05050A', 'Sin magma'], ['#FF7A1A', 'Magma activo'], ['#FF2A00', 'Acumulación volcánica intensa']]
+};
+
+function renderLegend(mode) {
+    const items = LAYER_LEGENDS[mode] || [];
+    legendBox.innerHTML = items.map(([color, label]) => (
+        `<div class="flex items-center gap-2 mb-1"><span class="inline-block w-3 h-3 rounded-sm border border-slate-600" style="background:${color}"></span><span>${label}</span></div>`
+    )).join('') || '<span class="text-slate-400">No legend for this layer.</span>';
+}
 
 let isRunning = false; 
 let timeScale = parseInt(document.getElementById('slider-timescale').value); 
@@ -1521,7 +1677,7 @@ let timeAccumulator = 0;
 
 generateConfigUI();
 engine.generateVoronoiSeed(8, 0.3); 
-updateValidation(); renderer.render();
+updateValidation(); renderer.render(); renderLegend(renderer.mode);
 
 document.getElementById('btn-play').addEventListener('click', () => { 
     if(!isRunning) {
@@ -1578,6 +1734,7 @@ document.querySelectorAll('.layer-btn').forEach(btn => {
         document.querySelectorAll('.layer-btn').forEach(b => b.classList.remove('active'));
         e.target.classList.add('active');
         renderer.mode = e.target.dataset.layer;
+        renderLegend(renderer.mode);
         renderer.render();
     });
 });
@@ -1593,6 +1750,15 @@ document.querySelectorAll('.tool-btn').forEach(btn => {
 document.getElementById('btn-preset-earth').addEventListener('click', () => { engine.generateVoronoiSeed(8, 0.3); resetSim(); });
 document.getElementById('btn-preset-pangea').addEventListener('click', () => { engine.generatePangea(); resetSim(); });
 document.getElementById('btn-preset-ocean').addEventListener('click', () => { engine.generateVoronoiSeed(15, 0.05); resetSim(); });
+document.getElementById('btn-preset-earth-today').addEventListener('click', () => {
+    Object.assign(CONFIG, PRESETS.REALISTIC);
+    generateConfigUI();
+    CONFIG.randomSeed = 20260413;
+    engine.setSeed(CONFIG.randomSeed);
+    document.getElementById('input-seed').value = CONFIG.randomSeed;
+    engine.generateEarthTodayApprox();
+    resetSim();
+});
 
 function resetSim() {
     engine.age = 0;
@@ -1612,6 +1778,14 @@ function getMousePos(e) {
     return {
         x: Math.floor((e.clientX - rect.left) * (canvas.width / rect.width)),
         y: Math.floor((e.clientY - rect.top) * (canvas.height / rect.height))
+    };
+}
+
+function getTouchPos(touch) {
+    let rect = canvas.getBoundingClientRect();
+    return {
+        x: Math.floor((touch.clientX - rect.left) * (canvas.width / rect.width)),
+        y: Math.floor((touch.clientY - rect.top) * (canvas.height / rect.height))
     };
 }
 
@@ -1676,6 +1850,15 @@ function applyTool(pos) {
                         engine.currCrust[idx] = 0;
                         engine.currThick[idx] = Math.max(2, engine.currThick[idx] - (0.8 + Math.abs(nThick)) * reliefIntensity);
                         engine.currDensity[idx] = Math.min(CONFIG.rhoOldOcean, engine.currDensity[idx] + 0.02 * reliefIntensity);
+                    } else if(currentTool === 'smooth') {
+                        let n = (ny > 0) ? (ny - 1) * engine.width + nx : idx;
+                        let s = (ny < engine.height - 1) ? (ny + 1) * engine.width + nx : idx;
+                        let e = (nx < engine.width - 1) ? ny * engine.width + (nx + 1) : idx;
+                        let w = (nx > 0) ? ny * engine.width + (nx - 1) : idx;
+                        let avgThick = (engine.currThick[idx] + engine.currThick[n] + engine.currThick[s] + engine.currThick[e] + engine.currThick[w]) / 5;
+                        let avgDensity = (engine.currDensity[idx] + engine.currDensity[n] + engine.currDensity[s] + engine.currDensity[e] + engine.currDensity[w]) / 5;
+                        engine.currThick[idx] += (avgThick - engine.currThick[idx]) * (0.25 * reliefIntensity);
+                        engine.currDensity[idx] += (avgDensity - engine.currDensity[idx]) * (0.2 * reliefIntensity);
                     }
                     engine.currElev[idx] = engine.calculateIsostaticElevation(engine.currThick[idx], engine.currDensity[idx]);
                 }
@@ -1703,6 +1886,22 @@ function applyTool(pos) {
 canvas.addEventListener('mousedown', (e) => { isDrawing = true; applyTool(getMousePos(e)); });
 canvas.addEventListener('mousemove', (e) => { if(isDrawing) applyTool(getMousePos(e)); });
 window.addEventListener('mouseup', () => { isDrawing = false; });
+
+canvas.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    e.preventDefault();
+    isDrawing = true;
+    applyTool(getTouchPos(e.touches[0]));
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+    if (!isDrawing || e.touches.length !== 1) return;
+    e.preventDefault();
+    applyTool(getTouchPos(e.touches[0]));
+}, { passive: false });
+
+canvas.addEventListener('touchend', () => { isDrawing = false; });
+canvas.addEventListener('touchcancel', () => { isDrawing = false; });
 
 function processAccumulatedTime(simulatedYearsToProcess) {
     timeAccumulator += simulatedYearsToProcess;
