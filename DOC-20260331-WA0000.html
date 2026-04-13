@@ -1190,20 +1190,24 @@ class TectonicEngine {
                 }
             }
         } else if (bType === 2) { // Divergent (Ridge)
-            if (this.nextCrust[idx1] !== 0) this.nextCrust[idx1] = 0;
-            if (this.nextCrust[idx2] !== 0) this.nextCrust[idx2] = 0;
-            this.nextAge[idx1] = 0;
-            this.nextAge[idx2] = 0;
-            this.nextArcAge[idx1] = 0;
-            this.nextArcAge[idx2] = 0;
-            this.nextSediment[idx1] = 0;
-            this.nextSediment[idx2] = 0;
-            this.nextTemp[idx1] = Math.min(1520, CONFIG.mantlePotentialTempC + CONFIG.ridgeThermalBoostC);
-            this.nextTemp[idx2] = Math.min(1520, CONFIG.mantlePotentialTempC + CONFIG.ridgeThermalBoostC);
-            this.nextDensity[idx1] = CONFIG.rhoYoungOcean;
-            this.nextDensity[idx2] = CONFIG.rhoYoungOcean;
-            this.nextThick[idx1] = Math.min(this.nextThick[idx1], CONFIG.baseOceanThick + 2.0);
-            this.nextThick[idx2] = Math.min(this.nextThick[idx2], CONFIG.baseOceanThick + 2.0);
+            const ridgeReset = (idx) => {
+                const isContinent = this.nextCrust[idx] === 1;
+                const canRiftToOcean = !isContinent;
+                if (!canRiftToOcean) {
+                    this.nextTopoOffset[idx] -= CONFIG.ridgeDivergenceRate * dtMa * 8.0; // continental rift basin
+                    this.nextStress[idx] += CONFIG.ridgeDivergenceRate * dtMa * 6.0;
+                    return;
+                }
+                this.nextCrust[idx] = 0;
+                this.nextAge[idx] = 0;
+                this.nextArcAge[idx] = 0;
+                this.nextSediment[idx] = 0;
+                this.nextTemp[idx] = Math.min(1520, CONFIG.mantlePotentialTempC + CONFIG.ridgeThermalBoostC);
+                this.nextDensity[idx] = CONFIG.rhoYoungOcean;
+                this.nextThick[idx] = Math.min(this.nextThick[idx], CONFIG.baseOceanThick + 2.0);
+            };
+            ridgeReset(idx1);
+            ridgeReset(idx2);
             let dMod = Math.max(0.2, 1.0 + this.fbm(cx1, cy1, 1, 0.1) * 0.5);
             this.nextTopoOffset[idx1] += CONFIG.ridgeDivergenceRate * dtMa * dMod * 50.0;
             this.nextTopoOffset[idx2] += CONFIG.ridgeDivergenceRate * dtMa * dMod * 50.0;
@@ -1509,7 +1513,7 @@ class TectonicEngine {
                 let targetElev = this.calculateIsostaticElevation(this.nextThick[i], this.nextDensity[i]);
                 targetElev += this.nextTopoOffset[i];
                 if (this.nextCrust[i] === 1) {
-                    const cratonFloor = -150 + Math.min(900, this.nextAge[i] * 18);
+                    const cratonFloor = 120 + Math.min(1100, this.nextAge[i] * 22);
                     if (targetElev < cratonFloor) targetElev = cratonFloor;
                 }
 
