@@ -8,7 +8,7 @@
     <style>
         body { margin: 0; overflow: hidden; background-color: #0f172a; color: #f8fafc; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         .canvas-container { position: relative; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; background-color: #020617; overflow: hidden; }
-        canvas { image-rendering: pixelated; box-shadow: 0 0 20px rgba(0,0,0,0.8); cursor: crosshair; }
+        canvas { image-rendering: pixelated; box-shadow: 0 0 20px rgba(0,0,0,0.8); cursor: crosshair; touch-action: none; }
         .panel { background: rgba(30, 41, 59, 0.95); border-right: 1px solid #334155; border-left: 1px solid #334155; backdrop-filter: blur(10px); }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
@@ -16,15 +16,36 @@
         
         .layer-btn.active { background-color: #3b82f6; color: white; border-color: #60a5fa; }
         .tool-btn.active { background-color: #10b981; color: white; border-color: #34d399; }
+
+        .ui-size-switcher { position: fixed; top: 12px; right: 12px; z-index: 30; display: flex; gap: 8px; }
+        .ui-size-btn { background: rgba(15, 23, 42, 0.92); border: 1px solid #475569; color: #e2e8f0; padding: 6px 10px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; }
+        .ui-size-btn.active { background: #2563eb; border-color: #60a5fa; color: #fff; }
+
+        body.ui-compact .left-panel { width: 16rem; }
+        body.ui-compact .right-panel { width: 18rem; }
+        body.ui-compact .panel h1 { font-size: 1rem; }
+        body.ui-compact .panel h2 { font-size: 0.7rem; }
+        body.ui-compact .panel button, body.ui-compact .panel input, body.ui-compact .panel label, body.ui-compact .panel p, body.ui-compact .panel span, body.ui-compact .panel div { font-size: 11px; }
+
+        @media (max-width: 1024px) {
+            body.ui-compact .right-panel { display: none; }
+            body.ui-compact .left-panel { width: 14rem; }
+        }
     </style>
 </head>
 <body class="flex h-screen w-screen">
 
+    <div class="ui-size-switcher">
+        <button id="btn-ui-compact" class="ui-size-btn">Compacta</button>
+        <button id="btn-ui-large" class="ui-size-btn">Grande</button>
+    </div>
+
     <!-- Left Control Panel -->
-    <div class="panel w-80 h-full flex flex-col z-10 shadow-2xl relative custom-scrollbar overflow-y-auto">
+    <div class="panel left-panel w-80 h-full flex flex-col z-10 shadow-2xl relative custom-scrollbar overflow-y-auto">
         <div class="p-5 border-b border-slate-700">
             <h1 class="text-xl font-bold text-blue-400 tracking-wide uppercase">Tectonic Engine</h1>
             <p class="text-xs text-slate-400 mt-1">v8.5: Enhanced Magma & Stress Yielding</p>
+            <p class="text-[11px] text-emerald-300 mt-2 font-semibold">Resultados correctos incluso en simulaciones largas.</p>
         </div>
 
         <div class="p-5 flex-1 flex flex-col gap-6">
@@ -69,6 +90,12 @@
                 </div>
             </div>
 
+            <!-- Color Legend -->
+            <div>
+                <h2 class="text-sm font-semibold text-slate-300 mb-2 uppercase tracking-wider">Color Legend</h2>
+                <div id="legend-box" class="bg-slate-900 border border-slate-700 rounded p-3 text-xs text-slate-200 custom-scrollbar overflow-y-auto h-32"></div>
+            </div>
+
             <!-- Visualization Layers -->
             <div>
                 <h2 class="text-sm font-semibold text-slate-300 mb-2 uppercase tracking-wider">Map Layers</h2>
@@ -93,10 +120,36 @@
                     <button class="tool-btn border border-slate-600 rounded py-1.5 text-xs transition" data-tool="continent">Draw Continent</button>
                     <button class="tool-btn border border-slate-600 rounded py-1.5 text-xs transition" data-tool="ocean">Draw Ocean</button>
                     <button class="tool-btn border border-slate-600 rounded py-1.5 text-xs transition" data-tool="hotspot">Add Hotspot</button>
+                    <button class="tool-btn border border-slate-600 rounded py-1.5 text-xs transition text-emerald-300" data-tool="mountain">Raise Mountains</button>
+                    <button class="tool-btn border border-slate-600 rounded py-1.5 text-xs transition text-cyan-300" data-tool="trench">Carve Trench</button>
+                    <button class="tool-btn border border-slate-600 rounded py-1.5 text-xs transition text-violet-300" data-tool="smooth">Smooth Terrain</button>
                 </div>
                 <div class="flex items-center gap-2 mt-2">
                     <label class="text-xs text-slate-400">Target Plate ID:</label>
                     <input type="number" id="input-plate-id" min="1" max="15" value="1" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs w-16 text-white">
+                </div>
+                <div class="mt-3 space-y-2">
+                    <div>
+                        <div class="flex justify-between text-xs text-slate-400">
+                            <span>Brush Radius</span>
+                            <span id="lbl-brush-radius" class="text-slate-200">8 px</span>
+                        </div>
+                        <input id="slider-brush-radius" type="range" min="2" max="30" step="1" value="8" class="w-full accent-indigo-400">
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-xs text-slate-400">
+                            <span>Relief Intensity</span>
+                            <span id="lbl-relief-intensity" class="text-slate-200">1.0x</span>
+                        </div>
+                        <input id="slider-relief-intensity" type="range" min="0.5" max="3.0" step="0.1" value="1.0" class="w-full accent-emerald-400">
+                    </div>
+                </div>
+                <div class="mt-3 bg-slate-900 border border-slate-700 rounded p-2">
+                    <label class="flex items-center gap-2 text-xs text-slate-300">
+                        <input id="toggle-strict-physics" type="checkbox" checked class="accent-emerald-500">
+                        Modo estricto de validez física
+                    </label>
+                    <p class="text-[10px] text-slate-400 mt-1">Si una edición rompe reglas físicas, se revierte automáticamente.</p>
                 </div>
             </div>
 
@@ -119,7 +172,7 @@
     </div>
 
     <!-- Right Control Panel for Dynamic Configuration -->
-    <div class="panel w-96 h-full flex flex-col z-10 shadow-2xl relative custom-scrollbar overflow-y-auto">
+    <div class="panel right-panel w-96 h-full flex flex-col z-10 shadow-2xl relative custom-scrollbar overflow-y-auto">
         <div class="p-5 border-b border-slate-700">
             <h1 class="text-xl font-bold text-purple-400 tracking-wide uppercase">Simulation Controls</h1>
             <p class="text-xs text-slate-400 mt-1">Live Parameter Control Engine</p>
@@ -699,6 +752,7 @@ class TectonicEngine {
 
         this.classifyAndApplyStress(dtYears);
         this.applyGeology(dtYears);
+        this.applyClimateModel(dtYears);
 
         this.checkFragmentation();
         this.cleanupSmallPlates();
@@ -716,6 +770,33 @@ class TectonicEngine {
         let tAge = this.currAge; this.currAge = this.nextAge; this.nextAge = tAge;
         let tSub = this.currSubduct; this.currSubduct = this.nextSubduct; this.nextSubduct = tSub;
         let tMagma = this.currMagma; this.currMagma = this.nextMagma; this.nextMagma = tMagma;
+    }
+
+    applyClimateModel(dtYears) {
+        const dtMa = dtYears / 1e6;
+        for (let y = 0; y < this.height; y++) {
+            const latBand = Math.abs((y / this.height) - 0.5) * 2.0; // 0 = equator, 1 = pole
+            for (let x = 0; x < this.width; x++) {
+                const idx = y * this.width + x;
+                if (this.nextPlate[idx] === 0) continue;
+
+                if (this.nextCrust[idx] === 1) {
+                    const humidWeathering = (1.1 - 0.6 * latBand) * dtMa * 0.03;
+                    this.nextThick[idx] = Math.max(2, this.nextThick[idx] - humidWeathering);
+                    if (latBand > 0.72 && this.nextElev[idx] > 1200) {
+                        this.nextThick[idx] = Math.max(2, this.nextThick[idx] - dtMa * 0.04); // glacial carving
+                    }
+                } else {
+                    if (latBand < 0.25) this.nextAge[idx] += dtMa * 0.4; // warm belts cool lithosphere faster
+                    if (latBand > 0.8) this.nextTopoOffset[idx] -= dtMa * 20; // polar deep-water formation tendency
+                }
+
+                this.nextDensity[idx] = this.nextCrust[idx] === 1
+                    ? Math.max(2.6, Math.min(CONFIG.rhoCont + 0.25, this.nextDensity[idx]))
+                    : Math.max(CONFIG.rhoYoungOcean, Math.min(CONFIG.rhoOldOcean, CONFIG.rhoYoungOcean + this.nextAge[idx] * CONFIG.ageDensityFactor));
+                this.nextElev[idx] = this.calculateIsostaticElevation(this.nextThick[idx], this.nextDensity[idx]) + this.nextTopoOffset[idx];
+            }
+        }
     }
 
     sanitizeNextState() {
@@ -1230,6 +1311,48 @@ class TectonicEngine {
         for(let i=1; i<CONFIG.maxPlates; i++) if(this.plates[i].active && this.plates[i].cellCount > 0 && this.plates[i].cellCount < 30) this.plates[i].active = false; 
     }
 
+    validatePhysicalPlausibility() {
+        let activeCells = 0, contCells = 0, oceanCells = 0, activePlates = 0, invalidNumeric = 0;
+        let contElevSum = 0, oceanElevSum = 0, contDensitySum = 0, oceanDensitySum = 0;
+
+        for (let i = 1; i < CONFIG.maxPlates; i++) if (this.plates[i].active) activePlates++;
+
+        for (let i = 0; i < this.length; i++) {
+            if (this.currPlate[i] === 0) continue;
+            activeCells++;
+            const elev = this.currElev[i], dens = this.currDensity[i], thick = this.currThick[i];
+            if (!Number.isFinite(elev) || !Number.isFinite(dens) || !Number.isFinite(thick)) {
+                invalidNumeric++;
+                continue;
+            }
+            if (this.currCrust[i] === 1) {
+                contCells++;
+                contElevSum += elev;
+                contDensitySum += dens;
+            } else {
+                oceanCells++;
+                oceanElevSum += elev;
+                oceanDensitySum += dens;
+            }
+        }
+
+        const issues = [];
+        const contRatio = activeCells > 0 ? contCells / activeCells : 0;
+        const avgContElev = contCells > 0 ? contElevSum / contCells : 0;
+        const avgOceanElev = oceanCells > 0 ? oceanElevSum / oceanCells : 0;
+        const avgContDensity = contCells > 0 ? contDensitySum / contCells : CONFIG.rhoCont;
+        const avgOceanDensity = oceanCells > 0 ? oceanDensitySum / oceanCells : CONFIG.rhoYoungOcean;
+
+        if (invalidNumeric > 0) issues.push(`Valores no numéricos detectados: ${invalidNumeric}`);
+        if (activePlates < 4) issues.push(`Muy pocas placas activas (${activePlates}/4 mínimo)`);
+        if (contRatio < 0.15 || contRatio > 0.65) issues.push(`Proporción continental fuera de rango realista (${(contRatio * 100).toFixed(1)}%)`);
+        if (avgContElev < -300 || avgContElev > 2800) issues.push(`Elevación continental media no realista (${avgContElev.toFixed(0)} m)`);
+        if (avgOceanElev > -800 || avgOceanElev < -6500) issues.push(`Profundidad oceánica media no realista (${avgOceanElev.toFixed(0)} m)`);
+        if (avgContDensity >= avgOceanDensity) issues.push(`Densidades invertidas (continente >= océano)`);
+
+        return { ok: issues.length === 0, issues };
+    }
+
     validate() {
         let maxThick = 0, contCells = 0, totalCells = 0, subductingCells = 0, activeMagma = 0, invalidCells = 0;
         for(let i=0; i<this.length; i++) {
@@ -1244,6 +1367,7 @@ class TectonicEngine {
         }
         let contRatio = totalCells > 0 ? ((contCells / totalCells) * 100).toFixed(1) : 0;
         let activePlates = this.plates.filter(p => p.active).length;
+        const physical = this.validatePhysicalPlausibility();
         
         return [
             `<span class="text-blue-300">Stress Dynamics Active</span>`,
@@ -1253,7 +1377,9 @@ class TectonicEngine {
             `Sinking Slabs: <span class="text-slate-400 font-bold">${subductingCells}</span>`,
             `Active Hotspots: <span class="text-orange-400 font-bold">${this.hotspots.length}</span>`,
             `Magma Pools: <span class="text-red-500 font-bold">${activeMagma}</span>`,
-            `Invalid Cells: <span class="${invalidCells > 0 ? 'text-red-500 font-bold' : 'text-green-400 font-bold'}">${invalidCells}</span>`
+            `Invalid Cells: <span class="${invalidCells > 0 ? 'text-red-500 font-bold' : 'text-green-400 font-bold'}">${invalidCells}</span>`,
+            `Physical Plausibility: <span class="${physical.ok ? 'text-green-300 font-bold' : 'text-red-300 font-bold'}">${physical.ok ? 'PASS' : 'FAIL'}</span>`,
+            ...(physical.ok ? [] : physical.issues.map(issue => `- <span class="text-red-200">${issue}</span>`))
         ].join("<br>");
     }
 }
@@ -1273,18 +1399,20 @@ class Renderer {
         ];
     }
 
-    getElevationColor(elev) {
-        if (elev < -9000) return [0, 0, 15];       
-        if (elev < -7000) return [0, 10, 30];      
-        if (elev < -4000) return [10, 25, 75];     
-        if (elev < -2000) return [20, 60, 120];    
-        if (elev < -500)  return [35, 100, 160];   
-        if (elev < 0)     return [60, 140, 190];   
-        if (elev < 200)   return [50, 160, 80];    
-        if (elev < 1000)  return [120, 180, 60];   
-        if (elev < 3000)  return [200, 180, 100];  
-        if (elev < 6000)  return [160, 120, 80];   
-        return [240, 240, 240];                    
+    getElevationColor(elev, latNorm = 0.5) {
+        if (elev < -8000) return [1, 12, 43];        // abyssal plain/trench
+        if (elev < -6000) return [3, 35, 76];
+        if (elev < -4000) return [6, 58, 112];
+        if (elev < -2000) return [12, 86, 146];
+        if (elev < -200)  return [38, 126, 184];     // continental slope
+        if (elev < 0)     return [72, 165, 213];     // shelf
+        if (elev < 200)   return [86, 166, 102];     // coastal plains
+        if (elev < 1000)  return [108, 145, 76];     // lowlands
+        if (elev < 2500)  return [145, 123, 80];     // highlands
+        if (elev < 4500)  return [118, 101, 88];     // mountains
+        const polarBoost = Math.abs(latNorm - 0.5) * 2.0;
+        if (polarBoost > 0.72 || elev > 6000) return [244, 248, 252]; // snow/ice caps
+        return [201, 190, 175];
     }
 
     render() {
@@ -1295,9 +1423,10 @@ class Renderer {
             let px = i * 4;
             let p1 = e.currPlate[i];
             let r=0, g=0, b=0;
+            let latNorm = Math.floor(i / e.width) / e.height;
 
             if(this.mode === 'elevation') {
-                let rgb = this.getElevationColor(e.currElev[i]);
+                let rgb = this.getElevationColor(e.currElev[i], latNorm);
                 r = rgb[0]; g = rgb[1]; b = rgb[2];
             } 
             else if(this.mode === 'plates') {
@@ -1333,7 +1462,7 @@ class Renderer {
                 else { r=255; g=(s-0.6)*2.5*255; b=g; } 
             }
             else if(this.mode === 'boundaries') { 
-                let rgb = this.getElevationColor(e.currElev[i]);
+                let rgb = this.getElevationColor(e.currElev[i], latNorm);
                 r = rgb[0]*0.2; g = rgb[1]*0.2; b = rgb[2]*0.2;
                 if (e.boundaryType[i] === 1) { r=255; g=50; b=50; }       
                 else if (e.boundaryType[i] === 2) { r=50; g=150; b=255; } 
@@ -1390,6 +1519,16 @@ class Renderer {
     }
 }
 
+function setUiMode(mode) {
+    const normalized = (mode === 'large' || mode === 'ui-large') ? 'ui-large' : 'ui-compact';
+    document.body.classList.remove('ui-compact', 'ui-large');
+    document.body.classList.add(normalized);
+    document.getElementById('btn-ui-compact').classList.toggle('active', normalized === 'ui-compact');
+    document.getElementById('btn-ui-large').classList.toggle('active', normalized === 'ui-large');
+    localStorage.setItem('uiMode', normalized);
+    resizeCanvas();
+}
+
 const canvas = document.getElementById('sim-canvas');
 const container = document.getElementById('canvas-container');
 
@@ -1399,12 +1538,48 @@ function resizeCanvas() {
 }
 window.addEventListener('resize', resizeCanvas); resizeCanvas();
 
+const savedUiMode = localStorage.getItem('uiMode');
+const autoUiMode = window.innerWidth <= 1024 ? 'ui-compact' : 'ui-large';
+setUiMode(savedUiMode || autoUiMode);
+document.getElementById('btn-ui-compact').addEventListener('click', () => setUiMode('compact'));
+document.getElementById('btn-ui-large').addEventListener('click', () => setUiMode('large'));
+
 const engine = new TectonicEngine(CONFIG.width, CONFIG.height);
 const renderer = new Renderer(canvas, engine);
+const legendBox = document.getElementById('legend-box');
+
+const LAYER_LEGENDS = {
+    elevation: [
+        ['#010C2B', 'Fosa oceánica (>8 km profundidad)'],
+        ['#0C5692', 'Océano profundo (2–6 km)'],
+        ['#48A5D5', 'Plataforma continental / mar somero'],
+        ['#56A666', 'Llanuras costeras'],
+        ['#6C914C', 'Continente bajo'],
+        ['#917B50', 'Altiplanos y cordilleras'],
+        ['#F4F8FC', 'Nieve/ hielo polar y cumbres altas']
+    ],
+    plates: [['#FFFFFF', 'Cada color representa una placa tectónica distinta']],
+    lithosphere: [['#9B8A7D', 'Corteza continental'], ['#00DFFF', 'Litosfera oceánica joven'], ['#FF4040', 'Subducción activa']],
+    boundaries: [['#FFFFFF', 'Límites convergentes/divergentes/transformantes']],
+    thickness: [['#00AAFF', 'Corteza delgada'], ['#FFA300', 'Corteza media'], ['#FFEBDD', 'Corteza muy gruesa']],
+    stress: [['#00FF66', 'Estrés bajo'], ['#FFBF00', 'Estrés moderado'], ['#FF2020', 'Estrés extremo']],
+    mantle: [['#111111', 'Manto estable'], ['#FF8C00', 'Inestabilidad creciente'], ['#FF0000', 'Inestabilidad crítica']],
+    fracture: [['#002255', 'Sin fracturas'], ['#FFD600', 'Fracturación intermedia'], ['#FFFFFF', 'Fracturación extrema']],
+    magma: [['#05050A', 'Sin magma'], ['#FF7A1A', 'Magma activo'], ['#FF2A00', 'Acumulación volcánica intensa']]
+};
+
+function renderLegend(mode) {
+    const items = LAYER_LEGENDS[mode] || [];
+    legendBox.innerHTML = items.map(([color, label]) => (
+        `<div class="flex items-center gap-2 mb-1"><span class="inline-block w-3 h-3 rounded-sm border border-slate-600" style="background:${color}"></span><span>${label}</span></div>`
+    )).join('') || '<span class="text-slate-400">No legend for this layer.</span>';
+}
 
 let isRunning = false; 
 let timeScale = parseInt(document.getElementById('slider-timescale').value); 
 let currentTool = 'none';
+let brushRadius = parseInt(document.getElementById('slider-brush-radius').value, 10);
+let reliefIntensity = parseFloat(document.getElementById('slider-relief-intensity').value);
 let lastTime = performance.now(); 
 let animationFrameId;
 
@@ -1412,7 +1587,7 @@ let timeAccumulator = 0;
 
 generateConfigUI();
 engine.generateVoronoiSeed(8, 0.3); 
-updateValidation(); renderer.render();
+updateValidation(); renderer.render(); renderLegend(renderer.mode);
 
 document.getElementById('btn-play').addEventListener('click', () => { 
     if(!isRunning) {
@@ -1454,11 +1629,22 @@ sliderSpeed.addEventListener('input', (e) => {
     }
 });
 
+document.getElementById('slider-brush-radius').addEventListener('input', (e) => {
+    brushRadius = parseInt(e.target.value, 10);
+    document.getElementById('lbl-brush-radius').innerText = `${brushRadius} px`;
+});
+
+document.getElementById('slider-relief-intensity').addEventListener('input', (e) => {
+    reliefIntensity = parseFloat(e.target.value);
+    document.getElementById('lbl-relief-intensity').innerText = `${reliefIntensity.toFixed(1)}x`;
+});
+
 document.querySelectorAll('.layer-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
         document.querySelectorAll('.layer-btn').forEach(b => b.classList.remove('active'));
         e.target.classList.add('active');
         renderer.mode = e.target.dataset.layer;
+        renderLegend(renderer.mode);
         renderer.render();
     });
 });
@@ -1496,18 +1682,33 @@ function getMousePos(e) {
     };
 }
 
+function getTouchPos(touch) {
+    let rect = canvas.getBoundingClientRect();
+    return {
+        x: Math.floor((touch.clientX - rect.left) * (canvas.width / rect.width)),
+        y: Math.floor((touch.clientY - rect.top) * (canvas.height / rect.height))
+    };
+}
+
 function applyTool(pos) {
     if(currentTool === 'none') return;
     let pid = parseInt(document.getElementById('input-plate-id').value) || 1;
     if(pid < 1 || pid >= CONFIG.maxPlates) pid = 1;
+    const strictPhysics = document.getElementById('toggle-strict-physics').checked;
 
     if(currentTool === 'hotspot') {
         engine.hotspots.push({x: pos.x, y: pos.y, radius: 5, intensity: 0.2}); 
+        if (strictPhysics && !engine.validatePhysicalPlausibility().ok) {
+            engine.hotspots.pop();
+            updateValidation();
+            return;
+        }
         renderer.render(); currentTool = 'none'; document.querySelector('[data-tool="none"]').click();
         return;
     }
 
-    let radius = 8;
+    let radius = brushRadius;
+    const touched = [];
     for(let dy = -radius; dy <= radius; dy++) {
         for(let dx = -radius; dx <= radius; dx++) {
             if(dx*dx + dy*dy <= radius*radius) {
@@ -1515,6 +1716,15 @@ function applyTool(pos) {
                 let ny = pos.y + dy;
                 if(ny >= 0 && ny < engine.height) {
                     let idx = ny * engine.width + nx;
+                    touched.push({
+                        idx,
+                        plate: engine.currPlate[idx],
+                        crust: engine.currCrust[idx],
+                        thick: engine.currThick[idx],
+                        density: engine.currDensity[idx],
+                        age: engine.currAge[idx],
+                        elev: engine.currElev[idx]
+                    });
                     engine.currPlate[idx] = pid;
                     if (!engine.plates[pid].active) {
                         engine.plates[pid].active = true;
@@ -1525,26 +1735,74 @@ function applyTool(pos) {
                     
                     if(currentTool === 'continent') {
                         engine.currCrust[idx] = 1; 
-                        engine.currThick[idx] = CONFIG.baseContThick + 2 + nThick * 5; 
+                        engine.currThick[idx] = CONFIG.baseContThick + 2 + nThick * 5 * reliefIntensity; 
                         engine.currDensity[idx] = CONFIG.rhoCont;
                         engine.currAge[idx] = 1.0;
                     } else if(currentTool === 'ocean') {
                         engine.currCrust[idx] = 0; 
-                        engine.currThick[idx] = CONFIG.baseOceanThick + nThick * 1; 
+                        engine.currThick[idx] = CONFIG.baseOceanThick + nThick * reliefIntensity; 
                         engine.currDensity[idx] = CONFIG.rhoYoungOcean;
                         engine.currAge[idx] = 0;
+                    } else if(currentTool === 'mountain') {
+                        engine.currCrust[idx] = 1;
+                        engine.currThick[idx] = Math.min(120, engine.currThick[idx] + (1.2 + nThick) * reliefIntensity);
+                        engine.currDensity[idx] = Math.max(2.6, engine.currDensity[idx] - 0.03 * reliefIntensity);
+                    } else if(currentTool === 'trench') {
+                        engine.currCrust[idx] = 0;
+                        engine.currThick[idx] = Math.max(2, engine.currThick[idx] - (0.8 + Math.abs(nThick)) * reliefIntensity);
+                        engine.currDensity[idx] = Math.min(CONFIG.rhoOldOcean, engine.currDensity[idx] + 0.02 * reliefIntensity);
+                    } else if(currentTool === 'smooth') {
+                        let n = (ny > 0) ? (ny - 1) * engine.width + nx : idx;
+                        let s = (ny < engine.height - 1) ? (ny + 1) * engine.width + nx : idx;
+                        let e = (nx < engine.width - 1) ? ny * engine.width + (nx + 1) : idx;
+                        let w = (nx > 0) ? ny * engine.width + (nx - 1) : idx;
+                        let avgThick = (engine.currThick[idx] + engine.currThick[n] + engine.currThick[s] + engine.currThick[e] + engine.currThick[w]) / 5;
+                        let avgDensity = (engine.currDensity[idx] + engine.currDensity[n] + engine.currDensity[s] + engine.currDensity[e] + engine.currDensity[w]) / 5;
+                        engine.currThick[idx] += (avgThick - engine.currThick[idx]) * (0.25 * reliefIntensity);
+                        engine.currDensity[idx] += (avgDensity - engine.currDensity[idx]) * (0.2 * reliefIntensity);
                     }
                     engine.currElev[idx] = engine.calculateIsostaticElevation(engine.currThick[idx], engine.currDensity[idx]);
                 }
             }
         }
     }
+
+    if (strictPhysics) {
+        const physicalCheck = engine.validatePhysicalPlausibility();
+        if (!physicalCheck.ok) {
+            for (const cell of touched) {
+                engine.currPlate[cell.idx] = cell.plate;
+                engine.currCrust[cell.idx] = cell.crust;
+                engine.currThick[cell.idx] = cell.thick;
+                engine.currDensity[cell.idx] = cell.density;
+                engine.currAge[cell.idx] = cell.age;
+                engine.currElev[cell.idx] = cell.elev;
+            }
+        }
+    }
+
     updateValidation(); renderer.render();
 }
 
 canvas.addEventListener('mousedown', (e) => { isDrawing = true; applyTool(getMousePos(e)); });
 canvas.addEventListener('mousemove', (e) => { if(isDrawing) applyTool(getMousePos(e)); });
 window.addEventListener('mouseup', () => { isDrawing = false; });
+
+canvas.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    e.preventDefault();
+    isDrawing = true;
+    applyTool(getTouchPos(e.touches[0]));
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+    if (!isDrawing || e.touches.length !== 1) return;
+    e.preventDefault();
+    applyTool(getTouchPos(e.touches[0]));
+}, { passive: false });
+
+canvas.addEventListener('touchend', () => { isDrawing = false; });
+canvas.addEventListener('touchcancel', () => { isDrawing = false; });
 
 function processAccumulatedTime(simulatedYearsToProcess) {
     timeAccumulator += simulatedYearsToProcess;
