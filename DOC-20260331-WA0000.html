@@ -2075,6 +2075,8 @@ function runGeoValidationSuite() {
 }
 
 let isDrawing = false;
+let activePointerId = null;
+
 function getMousePos(e) {
     let rect = canvas.getBoundingClientRect();
     return {
@@ -2083,12 +2085,8 @@ function getMousePos(e) {
     };
 }
 
-function getTouchPos(touch) {
-    let rect = canvas.getBoundingClientRect();
-    return {
-        x: Math.floor((touch.clientX - rect.left) * (canvas.width / rect.width)),
-        y: Math.floor((touch.clientY - rect.top) * (canvas.height / rect.height))
-    };
+function getPointerPos(e) {
+    return getMousePos(e);
 }
 
 function applyTool(pos) {
@@ -2221,25 +2219,35 @@ function applyTool(pos) {
     updateValidation(); renderer.render();
 }
 
-canvas.addEventListener('mousedown', (e) => { isDrawing = true; applyTool(getMousePos(e)); });
-canvas.addEventListener('mousemove', (e) => { if(isDrawing) applyTool(getMousePos(e)); });
-window.addEventListener('mouseup', () => { isDrawing = false; });
-
-canvas.addEventListener('touchstart', (e) => {
-    if (e.touches.length !== 1) return;
-    e.preventDefault();
+canvas.addEventListener('pointerdown', (e) => {
+    if (activePointerId !== null && activePointerId !== e.pointerId) return;
+    activePointerId = e.pointerId;
     isDrawing = true;
-    applyTool(getTouchPos(e.touches[0]));
-}, { passive: false });
+    if (typeof canvas.setPointerCapture === 'function') canvas.setPointerCapture(e.pointerId);
+    if (e.pointerType === 'touch' || e.pointerType === 'pen') e.preventDefault();
+    applyTool(getPointerPos(e));
+});
 
-canvas.addEventListener('touchmove', (e) => {
-    if (!isDrawing || e.touches.length !== 1) return;
-    e.preventDefault();
-    applyTool(getTouchPos(e.touches[0]));
-}, { passive: false });
+canvas.addEventListener('pointermove', (e) => {
+    if (!isDrawing || e.pointerId !== activePointerId) return;
+    if (e.pointerType === 'touch' || e.pointerType === 'pen') e.preventDefault();
+    applyTool(getPointerPos(e));
+});
 
-canvas.addEventListener('touchend', () => { isDrawing = false; });
-canvas.addEventListener('touchcancel', () => { isDrawing = false; });
+function stopDrawing(e) {
+    if (activePointerId !== null && e.pointerId !== activePointerId) return;
+    isDrawing = false;
+    if (activePointerId !== null && typeof canvas.releasePointerCapture === 'function') {
+        try { canvas.releasePointerCapture(activePointerId); } catch (_) {}
+    }
+    activePointerId = null;
+}
+
+canvas.addEventListener('pointerup', stopDrawing);
+canvas.addEventListener('pointercancel', stopDrawing);
+canvas.addEventListener('pointerleave', (e) => {
+    if (e.pointerType === 'mouse') stopDrawing(e);
+});
 
 function processAccumulatedTime(simulatedYearsToProcess) {
     timeAccumulator += simulatedYearsToProcess;
