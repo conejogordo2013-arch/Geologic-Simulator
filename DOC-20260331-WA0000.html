@@ -953,7 +953,7 @@ class TectonicEngine {
                 if (this.nextPlate[idx] === 0) continue;
 
                 if (this.nextCrust[idx] === 1 || this.nextCrust[idx] === 2) {
-                    const humidWeathering = (1.1 - 0.6 * latBand) * dtMa * 0.03;
+                    const humidWeathering = (1.1 - 0.6 * latBand) * dtMa * 0.012;
                     this.nextThick[idx] = Math.max(2, this.nextThick[idx] - humidWeathering);
                     if (latBand > 0.72 && this.nextElev[idx] > 1200) {
                         this.nextThick[idx] = Math.max(2, this.nextThick[idx] - dtMa * 0.04); // glacial carving
@@ -969,7 +969,8 @@ class TectonicEngine {
                         ? Math.max(2.72, Math.min(2.95, this.nextDensity[idx]))
                         : Math.max(2.6, Math.min(CONFIG.rhoCont + 0.25, this.nextDensity[idx])));
                 const thermalAnomaly = (CONFIG.mantlePotentialTempC - this.nextTemp[idx]) / 1000.0;
-                this.nextDensity[idx] = Math.max(2.5, Math.min(CONFIG.rhoOldOcean, this.nextDensity[idx] + thermalAnomaly * 0.18));
+                const thermalToDensity = this.nextCrust[idx] === 0 ? 0.18 : (this.nextCrust[idx] === 2 ? 0.11 : 0.05);
+                this.nextDensity[idx] = Math.max(2.5, Math.min(CONFIG.rhoOldOcean, this.nextDensity[idx] + thermalAnomaly * thermalToDensity));
                 this.nextElev[idx] = this.calculateIsostaticElevation(this.nextThick[idx], this.nextDensity[idx]) + this.nextTopoOffset[idx];
             }
         }
@@ -1470,7 +1471,7 @@ class TectonicEngine {
                 }
             }
             
-            if(this.nextCrust[i] === 1 && this.nextThick[i] < 12.0 && this.nextStress[i] > 2.0) {
+            if(this.nextCrust[i] === 1 && this.nextThick[i] < 8.5 && this.nextStress[i] > 10.0) {
                 this.nextCrust[i] = 0; 
                 this.nextDensity[i] = CONFIG.rhoYoungOcean; 
                 this.nextAge[i] = 0; 
@@ -1507,6 +1508,10 @@ class TectonicEngine {
 
                 let targetElev = this.calculateIsostaticElevation(this.nextThick[i], this.nextDensity[i]);
                 targetElev += this.nextTopoOffset[i];
+                if (this.nextCrust[i] === 1) {
+                    const cratonFloor = -150 + Math.min(900, this.nextAge[i] * 18);
+                    if (targetElev < cratonFloor) targetElev = cratonFloor;
+                }
 
                 let maxElev = this.nextCrust[i] === 1 ? CONFIG.maxElevCont : CONFIG.maxElevOcean;
                 if (targetElev > maxElev) targetElev = maxElev;
