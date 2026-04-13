@@ -119,8 +119,8 @@
             <div>
                 <h2 class="text-sm font-semibold text-slate-300 mb-2 uppercase tracking-wider">Map Editor</h2>
                 <div class="grid grid-cols-2 gap-2 mb-2">
-                    <button class="tool-btn active border border-slate-600 rounded py-1.5 text-xs transition" data-tool="none">View / Pan</button>
-                    <button class="tool-btn border border-slate-600 rounded py-1.5 text-xs transition" data-tool="continent">Draw Continent</button>
+                    <button class="tool-btn border border-slate-600 rounded py-1.5 text-xs transition" data-tool="none">View / Pan</button>
+                    <button class="tool-btn active border border-slate-600 rounded py-1.5 text-xs transition" data-tool="continent">Draw Continent</button>
                     <button class="tool-btn border border-slate-600 rounded py-1.5 text-xs transition" data-tool="ocean">Draw Ocean</button>
                     <button class="tool-btn border border-slate-600 rounded py-1.5 text-xs transition" data-tool="hotspot">Add Hotspot</button>
                     <button class="tool-btn border border-slate-600 rounded py-1.5 text-xs transition text-emerald-300" data-tool="mountain">Raise Mountains</button>
@@ -1896,7 +1896,7 @@ function renderLegend(mode) {
 
 let isRunning = false; 
 let timeScale = parseInt(document.getElementById('slider-timescale').value); 
-let currentTool = 'none';
+let currentTool = 'continent';
 let brushRadius = parseInt(document.getElementById('slider-brush-radius').value, 10);
 let reliefIntensity = parseFloat(document.getElementById('slider-relief-intensity').value);
 let lastTime = performance.now(); 
@@ -2075,6 +2075,8 @@ function runGeoValidationSuite() {
 }
 
 let isDrawing = false;
+let activePointerId = null;
+
 function getMousePos(e) {
     let rect = canvas.getBoundingClientRect();
     return {
@@ -2083,12 +2085,8 @@ function getMousePos(e) {
     };
 }
 
-function getTouchPos(touch) {
-    let rect = canvas.getBoundingClientRect();
-    return {
-        x: Math.floor((touch.clientX - rect.left) * (canvas.width / rect.width)),
-        y: Math.floor((touch.clientY - rect.top) * (canvas.height / rect.height))
-    };
+function getPointerPos(e) {
+    return getMousePos(e);
 }
 
 function applyTool(pos) {
@@ -2221,25 +2219,61 @@ function applyTool(pos) {
     updateValidation(); renderer.render();
 }
 
-canvas.addEventListener('mousedown', (e) => { isDrawing = true; applyTool(getMousePos(e)); });
-canvas.addEventListener('mousemove', (e) => { if(isDrawing) applyTool(getMousePos(e)); });
-window.addEventListener('mouseup', () => { isDrawing = false; });
-
-canvas.addEventListener('touchstart', (e) => {
-    if (e.touches.length !== 1) return;
-    e.preventDefault();
+function startDrawing(e) {
+    if (activePointerId !== null && activePointerId !== e.pointerId) return;
+    if (typeof e.pointerId === 'number') activePointerId = e.pointerId;
     isDrawing = true;
-    applyTool(getTouchPos(e.touches[0]));
-}, { passive: false });
+    if (typeof e.pointerId === 'number' && typeof canvas.setPointerCapture === 'function') canvas.setPointerCapture(e.pointerId);
+    if (e.pointerType === 'touch' || e.pointerType === 'pen') e.preventDefault();
+    applyTool(getPointerPos(e));
+}
 
-canvas.addEventListener('touchmove', (e) => {
-    if (!isDrawing || e.touches.length !== 1) return;
-    e.preventDefault();
-    applyTool(getTouchPos(e.touches[0]));
-}, { passive: false });
+function moveDrawing(e) {
+    if (!isDrawing) return;
+    if (typeof e.pointerId === 'number' && e.pointerId !== activePointerId) return;
+    if (e.pointerType === 'touch' || e.pointerType === 'pen') e.preventDefault();
+    applyTool(getPointerPos(e));
+}
 
-canvas.addEventListener('touchend', () => { isDrawing = false; });
-canvas.addEventListener('touchcancel', () => { isDrawing = false; });
+function stopDrawing(e) {
+    if (typeof e.pointerId === 'number' && activePointerId !== null && e.pointerId !== activePointerId) return;
+    isDrawing = false;
+    if (typeof e.pointerId === 'number' && activePointerId !== null && typeof canvas.releasePointerCapture === 'function') {
+        try { canvas.releasePointerCapture(activePointerId); } catch (_) {}
+    }
+    activePointerId = null;
+}
+
+if (window.PointerEvent) {
+    canvas.addEventListener('pointerdown', startDrawing);
+    canvas.addEventListener('pointermove', moveDrawing);
+    canvas.addEventListener('pointerup', stopDrawing);
+    canvas.addEventListener('pointercancel', stopDrawing);
+    canvas.addEventListener('pointerleave', (e) => {
+        if (e.pointerType === 'mouse') stopDrawing(e);
+    });
+} else {
+    canvas.addEventListener('mousedown', startDrawing);
+    canvas.addEventListener('mousemove', moveDrawing);
+    window.addEventListener('mouseup', stopDrawing);
+
+    canvas.addEventListener('touchstart', (e) => {
+        if (!e.touches || e.touches.length !== 1) return;
+        e.preventDefault();
+        const touch = e.touches[0];
+        startDrawing({ clientX: touch.clientX, clientY: touch.clientY, pointerType: 'touch' });
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', (e) => {
+        if (!isDrawing || !e.touches || e.touches.length !== 1) return;
+        e.preventDefault();
+        const touch = e.touches[0];
+        moveDrawing({ clientX: touch.clientX, clientY: touch.clientY, pointerType: 'touch' });
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', () => stopDrawing({ pointerType: 'touch' }));
+    canvas.addEventListener('touchcancel', () => stopDrawing({ pointerType: 'touch' }));
+}
 
 function processAccumulatedTime(simulatedYearsToProcess) {
     timeAccumulator += simulatedYearsToProcess;
