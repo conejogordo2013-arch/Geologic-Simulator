@@ -16,12 +16,32 @@
         
         .layer-btn.active { background-color: #3b82f6; color: white; border-color: #60a5fa; }
         .tool-btn.active { background-color: #10b981; color: white; border-color: #34d399; }
+
+        .ui-size-switcher { position: fixed; top: 12px; right: 12px; z-index: 30; display: flex; gap: 8px; }
+        .ui-size-btn { background: rgba(15, 23, 42, 0.92); border: 1px solid #475569; color: #e2e8f0; padding: 6px 10px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; }
+        .ui-size-btn.active { background: #2563eb; border-color: #60a5fa; color: #fff; }
+
+        body.ui-compact .left-panel { width: 16rem; }
+        body.ui-compact .right-panel { width: 18rem; }
+        body.ui-compact .panel h1 { font-size: 1rem; }
+        body.ui-compact .panel h2 { font-size: 0.7rem; }
+        body.ui-compact .panel button, body.ui-compact .panel input, body.ui-compact .panel label, body.ui-compact .panel p, body.ui-compact .panel span, body.ui-compact .panel div { font-size: 11px; }
+
+        @media (max-width: 1024px) {
+            body.ui-compact .right-panel { display: none; }
+            body.ui-compact .left-panel { width: 14rem; }
+        }
     </style>
 </head>
 <body class="flex h-screen w-screen">
 
+    <div class="ui-size-switcher">
+        <button id="btn-ui-compact" class="ui-size-btn">Compacta</button>
+        <button id="btn-ui-large" class="ui-size-btn">Grande</button>
+    </div>
+
     <!-- Left Control Panel -->
-    <div class="panel w-80 h-full flex flex-col z-10 shadow-2xl relative custom-scrollbar overflow-y-auto">
+    <div class="panel left-panel w-80 h-full flex flex-col z-10 shadow-2xl relative custom-scrollbar overflow-y-auto">
         <div class="p-5 border-b border-slate-700">
             <h1 class="text-xl font-bold text-blue-400 tracking-wide uppercase">Tectonic Engine</h1>
             <p class="text-xs text-slate-400 mt-1">v8.5: Enhanced Magma & Stress Yielding</p>
@@ -119,7 +139,7 @@
     </div>
 
     <!-- Right Control Panel for Dynamic Configuration -->
-    <div class="panel w-96 h-full flex flex-col z-10 shadow-2xl relative custom-scrollbar overflow-y-auto">
+    <div class="panel right-panel w-96 h-full flex flex-col z-10 shadow-2xl relative custom-scrollbar overflow-y-auto">
         <div class="p-5 border-b border-slate-700">
             <h1 class="text-xl font-bold text-purple-400 tracking-wide uppercase">Simulation Controls</h1>
             <p class="text-xs text-slate-400 mt-1">Live Parameter Control Engine</p>
@@ -1390,6 +1410,16 @@ class Renderer {
     }
 }
 
+function setUiMode(mode) {
+    const normalized = (mode === 'large' || mode === 'ui-large') ? 'ui-large' : 'ui-compact';
+    document.body.classList.remove('ui-compact', 'ui-large');
+    document.body.classList.add(normalized);
+    document.getElementById('btn-ui-compact').classList.toggle('active', normalized === 'ui-compact');
+    document.getElementById('btn-ui-large').classList.toggle('active', normalized === 'ui-large');
+    localStorage.setItem('uiMode', normalized);
+    resizeCanvas();
+}
+
 const canvas = document.getElementById('sim-canvas');
 const container = document.getElementById('canvas-container');
 
@@ -1398,6 +1428,12 @@ function resizeCanvas() {
     canvas.style.width = `${size}px`; canvas.style.height = `${size}px`;
 }
 window.addEventListener('resize', resizeCanvas); resizeCanvas();
+
+const savedUiMode = localStorage.getItem('uiMode');
+const autoUiMode = window.innerWidth <= 1024 ? 'ui-compact' : 'ui-large';
+setUiMode(savedUiMode || autoUiMode);
+document.getElementById('btn-ui-compact').addEventListener('click', () => setUiMode('compact'));
+document.getElementById('btn-ui-large').addEventListener('click', () => setUiMode('large'));
 
 const engine = new TectonicEngine(CONFIG.width, CONFIG.height);
 const renderer = new Renderer(canvas, engine);
