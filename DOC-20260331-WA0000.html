@@ -88,6 +88,8 @@
                 <div id="validation-box" class="bg-slate-900 border border-slate-700 rounded p-3 text-xs font-mono text-slate-300 h-36 overflow-y-auto custom-scrollbar leading-tight">
                     Initializing causal grid...
                 </div>
+                <button id="btn-run-tests" class="mt-2 w-full bg-slate-800 hover:bg-slate-700 border border-slate-600 transition py-1.5 rounded text-[11px] font-bold text-emerald-200">Run Geo Test Suite</button>
+                <div id="test-suite-box" class="mt-2 bg-slate-950 border border-slate-800 rounded p-2 text-[10px] text-slate-400 font-mono h-20 overflow-y-auto custom-scrollbar">Sin ejecutar.</div>
             </div>
 
             <!-- Color Legend -->
@@ -157,7 +159,6 @@
             <div class="mt-auto pb-4">
                 <h2 class="text-sm font-semibold text-slate-300 mb-2 uppercase tracking-wider">Map Scenarios</h2>
                 <div class="flex flex-col gap-2">
-                    <button id="btn-preset-earth-today" class="bg-emerald-900 hover:bg-emerald-800 border border-emerald-700 transition py-2 rounded text-xs font-bold shadow text-emerald-100">Earth</button>
                     <button id="btn-preset-earth" class="bg-indigo-900 hover:bg-indigo-800 border border-indigo-700 transition py-2 rounded text-xs font-bold shadow text-indigo-100">Earth-like Approximation</button>
                     <button id="btn-preset-pangea" class="bg-amber-900 hover:bg-amber-800 border border-amber-700 transition py-2 rounded text-xs font-bold shadow text-amber-100">Supercontinent (Pangea)</button>
                     <button id="btn-preset-ocean" class="bg-cyan-900 hover:bg-cyan-800 border border-cyan-700 transition py-2 rounded text-xs font-bold shadow text-cyan-100">Ocean-Dominated / Chaotic</button>
@@ -240,6 +241,7 @@ const CONFIG = {
     height: 400,            
     cellSize: 2000000,      // cm per pixel (20 km)
     fixedDt: 10000,         // FIXED PHYSICS STEP (10,000 years)
+    maxPlateSpeedCmYr: 10.0,
     
     rhoMantle: 3.3,         
     rhoCont: 2.7,           
@@ -290,7 +292,10 @@ const CONFIG = {
     visualScale: 10.0,               // MANDATORY SCALING LAYER
     eruptionThreshold: 2.0,          // Magma accumulation required to surface
     eruptionEfficiency: 0.8,         // How much magma converts to elevation
-    randomSeed: 123456789            // Deterministic reproducibility
+    randomSeed: 123456789,           // Deterministic reproducibility
+    continentalAccretionRatePctPerMa: 0.06,
+    continentalCollisionUpliftFactor: 0.25,
+    minOceanicAgeForSubductionMa: 8.0
 };
 
 class SeededRNG {
@@ -530,6 +535,8 @@ class TectonicEngine {
         this.plates = new Array(CONFIG.maxPlates).fill(null).map((_, i) => new Plate(i));
         this.hotspots = [];
         this.age = 0;
+        this.initialContinentCells = 0;
+        this.lastContinentCells = 0;
     }
     setSeed(seed) {
         this.rng.setSeed(seed);
@@ -569,6 +576,22 @@ class TectonicEngine {
         return (thickness * densityDiff / CONFIG.rhoMantle) * 1000 - CONFIG.isoOffset;
     }
 
+    recountContinentalCells(crustField = this.currCrust, plateField = this.currPlate) {
+        let continental = 0, total = 0;
+        for (let i = 0; i < this.length; i++) {
+            if (plateField[i] === 0) continue;
+            total++;
+            if (crustField[i] === 1) continental++;
+        }
+        return { continental, total };
+    }
+
+    initializeReferenceContinentalMass() {
+        const counts = this.recountContinentalCells(this.currCrust, this.currPlate);
+        this.initialContinentCells = counts.continental;
+        this.lastContinentCells = counts.continental;
+    }
+
     updatePlateVelocities() {
         this.currentSpeedMultiplier += (this.targetSpeedMultiplier - this.currentSpeedMultiplier) * 0.1;
         let totalSpeed = 0, activeCount = 0;
@@ -581,7 +604,7 @@ class TectonicEngine {
                 
                 let speed = Math.sqrt(desiredVx * desiredVx + desiredVy * desiredVy);
                 if (speed > 0.001) {
-                    let clampedSpeed = Math.max(0.5, Math.min(15.0, speed));
+                    let clampedSpeed = Math.min(CONFIG.maxPlateSpeedCmYr, speed);
                     let scale = clampedSpeed / speed;
                     p.vx = desiredVx * scale; p.vy = desiredVy * scale;
                     totalSpeed += clampedSpeed;
@@ -653,6 +676,7 @@ class TectonicEngine {
             }
         }
         this.updatePlateVelocities();
+        this.initializeReferenceContinentalMass();
     }
 
     generatePangea() {
@@ -687,6 +711,7 @@ class TectonicEngine {
             }
         }
         this.updatePlateVelocities();
+        this.initializeReferenceContinentalMass();
     }
 
     generateEarthTodayApprox() {
@@ -768,6 +793,7 @@ class TectonicEngine {
             }
         }
         this.updatePlateVelocities();
+        this.initializeReferenceContinentalMass();
     }
 
     step(dtYears) {
@@ -1022,7 +1048,13 @@ class TectonicEngine {
             let c1 = this.nextCrust[idx1], c2 = this.nextCrust[idx2];
             let d1 = this.nextDensity[idx1], d2 = this.nextDensity[idx2];
 
-            if (c1 !== 1 || c2 !== 1) { // Normal subduction
+            if (c1 === 1 && c2 === 1) {
+                const collisionUplift = CONFIG.continentalCollisionUpliftFactor * speed * dtMa;
+                this.nextTopoOffset[idx1] += collisionUplift * 220.0;
+                this.nextTopoOffset[idx2] += collisionUplift * 220.0;
+                this.nextStress[idx1] += collisionUplift * 20.0;
+                this.nextStress[idx2] += collisionUplift * 20.0;
+            } else { // Oceanic subduction only
                 let subIdx = -1, overIdx = -1, subPlate = -1, oDirX = 0, oDirY = 0;
                 
                 if (c1 === 0 && c2 === 1) { subIdx = idx1; overIdx = idx2; subPlate = p1; oDirX = nx; oDirY = ny; } 
@@ -1033,6 +1065,11 @@ class TectonicEngine {
                 }
 
                 if (subIdx !== -1) {
+                    if (this.nextAge[subIdx] < CONFIG.minOceanicAgeForSubductionMa) {
+                        this.setBoundaryPriority(idx1, bType);
+                        this.setBoundaryPriority(idx2, bType);
+                        return;
+                    }
                     let subDensityDiff = Math.max(0.05, this.nextDensity[subIdx] - this.nextDensity[overIdx]);
                     let stressPush = 1.0 + (this.nextStress[subIdx] / 100.0);
                     let subProgressRate = (1.0 / CONFIG.tau_subduct) * dtMa * (speed / 5.0) * (subDensityDiff / 0.4) * stressPush;
@@ -1061,6 +1098,14 @@ class TectonicEngine {
                 }
             }
         } else if (bType === 2) { // Divergent (Ridge)
+            if (this.nextCrust[idx1] === 1) this.nextCrust[idx1] = 0;
+            if (this.nextCrust[idx2] === 1) this.nextCrust[idx2] = 0;
+            this.nextAge[idx1] = 0;
+            this.nextAge[idx2] = 0;
+            this.nextDensity[idx1] = CONFIG.rhoYoungOcean;
+            this.nextDensity[idx2] = CONFIG.rhoYoungOcean;
+            this.nextThick[idx1] = Math.min(this.nextThick[idx1], CONFIG.baseOceanThick + 2.0);
+            this.nextThick[idx2] = Math.min(this.nextThick[idx2], CONFIG.baseOceanThick + 2.0);
             let dMod = Math.max(0.2, 1.0 + this.fbm(cx1, cy1, 1, 0.1) * 0.5);
             this.nextTopoOffset[idx1] += CONFIG.ridgeDivergenceRate * dtMa * dMod * 50.0;
             this.nextTopoOffset[idx2] += CONFIG.ridgeDivergenceRate * dtMa * dMod * 50.0;
@@ -1077,6 +1122,9 @@ class TectonicEngine {
 
     applyGeology(dt) {
         let dtMa = dt / 1000000.0;
+        const activeNow = this.recountContinentalCells(this.nextCrust, this.nextPlate);
+        const maxNewContinentCells = Math.max(1, Math.floor(activeNow.total * CONFIG.continentalAccretionRatePctPerMa * dtMa / 100));
+        let convertedToContinental = 0;
         
         let tempInstability = new Float32Array(this.length);
         for(let y=1; y<this.height-1; y++) {
@@ -1287,10 +1335,26 @@ class TectonicEngine {
                 }
             }
 
-            if (this.nextCrust[i] === 0 && this.nextThick[i] > 20.0) {
-                this.nextCrust[i] = 1; 
-                this.nextDensity[i] = CONFIG.rhoCont;
-                this.nextAge[i] = 1.0; 
+            if (this.nextCrust[i] === 0 && this.nextThick[i] > 18.5 && this.nextMagma[i] > CONFIG.eruptionThreshold * 1.1) {
+                const x = i % this.width;
+                const y = Math.floor(i / this.width);
+                let nearConvergentOrArc = this.boundaryType[i] === 1 || this.currSubduct[i] > 0.04;
+                let hasNearbyContinent = false;
+                const neigh = [[1,0],[-1,0],[0,1],[0,-1],[2,0],[-2,0],[0,2],[0,-2]];
+                for (const [dx, dy] of neigh) {
+                    const nx = (x + dx + this.width) % this.width;
+                    const ny = y + dy;
+                    if (ny < 0 || ny >= this.height) continue;
+                    const nIdx = ny * this.width + nx;
+                    if (this.nextCrust[nIdx] === 1) hasNearbyContinent = true;
+                    if (this.boundaryType[nIdx] === 1) nearConvergentOrArc = true;
+                }
+                if (hasNearbyContinent && nearConvergentOrArc && this.boundaryType[i] !== 2 && convertedToContinental < maxNewContinentCells) {
+                    this.nextCrust[i] = 1;
+                    this.nextDensity[i] = CONFIG.rhoCont;
+                    this.nextAge[i] = 1.0;
+                    convertedToContinental++;
+                }
             }
             
             if(this.nextCrust[i] === 1 && this.nextThick[i] < 12.0 && this.nextStress[i] > 2.0) {
@@ -1424,6 +1488,13 @@ class TectonicEngine {
         const avgOceanElev = oceanCells > 0 ? oceanElevSum / oceanCells : 0;
         const avgContDensity = contCells > 0 ? contDensitySum / contCells : CONFIG.rhoCont;
         const avgOceanDensity = oceanCells > 0 ? oceanDensitySum / oceanCells : CONFIG.rhoYoungOcean;
+        const elapsedMa = Math.max(0.001, this.age / 1e6);
+        const growthPctPerMa = this.initialContinentCells > 0 ? ((contCells - this.initialContinentCells) / this.initialContinentCells) * 100 / elapsedMa : 0;
+        let continentalAtDorsal = 0;
+        for (let i = 0; i < this.length; i++) {
+            if (this.currPlate[i] === 0) continue;
+            if (this.currCrust[i] === 1 && this.boundaryType[i] === 2) continentalAtDorsal++;
+        }
 
         if (invalidNumeric > 0) issues.push(`Valores no numéricos detectados: ${invalidNumeric}`);
         if (activePlates < 4) issues.push(`Muy pocas placas activas (${activePlates}/4 mínimo)`);
@@ -1431,6 +1502,8 @@ class TectonicEngine {
         if (avgContElev < -300 || avgContElev > 2800) issues.push(`Elevación continental media no realista (${avgContElev.toFixed(0)} m)`);
         if (avgOceanElev > -800 || avgOceanElev < -6500) issues.push(`Profundidad oceánica media no realista (${avgOceanElev.toFixed(0)} m)`);
         if (avgContDensity >= avgOceanDensity) issues.push(`Densidades invertidas (continente >= océano)`);
+        if (growthPctPerMa > CONFIG.continentalAccretionRatePctPerMa * 1.6) issues.push(`Crecimiento continental demasiado rápido (${growthPctPerMa.toFixed(3)}%/Ma)`);
+        if (continentalAtDorsal > 0) issues.push(`ERROR: Se detectó continente sobre dorsal divergente (${continentalAtDorsal} celdas)`);
 
         let earthScore = 100;
         earthScore -= Math.min(45, issues.length * 12);
@@ -1455,6 +1528,8 @@ class TectonicEngine {
             }
         }
         let contRatio = totalCells > 0 ? ((contCells / totalCells) * 100).toFixed(1) : 0;
+        const elapsedMa = Math.max(0.001, this.age / 1e6);
+        const growthRatePctPerMa = this.initialContinentCells > 0 ? (((contCells - this.initialContinentCells) / this.initialContinentCells) * 100 / elapsedMa) : 0;
         let activePlates = this.plates.filter(p => p.active).length;
         const physical = this.validatePhysicalPlausibility();
         
@@ -1462,6 +1537,7 @@ class TectonicEngine {
             `<span class="text-blue-300">Stress Dynamics Active</span>`,
             `Active Plates: <span class="text-white">${activePlates}</span>`,
             `Continental Vol: <span class="text-white">${contRatio}%</span>`,
+            `Growth Rate: <span class="${growthRatePctPerMa <= CONFIG.continentalAccretionRatePctPerMa ? 'text-green-300' : 'text-red-300'}">${growthRatePctPerMa.toFixed(3)} %/Ma</span>`,
             `Max Crust Thick: <span class="text-white">${maxThick.toFixed(1)} km</span>`,
             `Sinking Slabs: <span class="text-slate-400 font-bold">${subductingCells}</span>`,
             `Active Hotspots: <span class="text-orange-400 font-bold">${this.hotspots.length}</span>`,
@@ -1750,18 +1826,11 @@ document.querySelectorAll('.tool-btn').forEach(btn => {
 document.getElementById('btn-preset-earth').addEventListener('click', () => { engine.generateVoronoiSeed(8, 0.3); resetSim(); });
 document.getElementById('btn-preset-pangea').addEventListener('click', () => { engine.generatePangea(); resetSim(); });
 document.getElementById('btn-preset-ocean').addEventListener('click', () => { engine.generateVoronoiSeed(15, 0.05); resetSim(); });
-document.getElementById('btn-preset-earth-today').addEventListener('click', () => {
-    Object.assign(CONFIG, PRESETS.REALISTIC);
-    generateConfigUI();
-    CONFIG.randomSeed = 20260413;
-    engine.setSeed(CONFIG.randomSeed);
-    document.getElementById('input-seed').value = CONFIG.randomSeed;
-    engine.generateEarthTodayApprox();
-    resetSim();
-});
+document.getElementById('btn-run-tests').addEventListener('click', () => runGeoValidationSuite());
 
 function resetSim() {
     engine.age = 0;
+    engine.initializeReferenceContinentalMass();
     timeAccumulator = 0; 
     engine.targetSpeedMultiplier = parseFloat(sliderSpeed.value);
     engine.currentSpeedMultiplier = engine.targetSpeedMultiplier;
@@ -1771,6 +1840,42 @@ function resetSim() {
 }
 
 function updateValidation() { document.getElementById('validation-box').innerHTML = engine.validate(); }
+
+function runGeoValidationSuite() {
+    const suiteBox = document.getElementById('test-suite-box');
+    const suiteStart = performance.now();
+    const localConfig = { ...CONFIG };
+    const runScenario = (name, setupFn, seed) => {
+        const testEngine = new TectonicEngine(120, 120);
+        testEngine.setSeed(seed);
+        setupFn(testEngine);
+        testEngine.initializeReferenceContinentalMass();
+        const dt = 100000;
+        const totalYears = 36000000;
+        const steps = Math.floor(totalYears / dt);
+        for (let i = 0; i < steps; i++) {
+            testEngine.updatePlateVelocities();
+            testEngine.step(dt);
+        }
+        const report = testEngine.validatePhysicalPlausibility();
+        return { name, ok: report.ok, issues: report.issues.slice(0, 2) };
+    };
+
+    const scenarios = [
+        runScenario("OceanPure", (e) => e.generateVoronoiSeed(12, 0.0), 1001),
+        runScenario("EarthSeedA", (e) => e.generateVoronoiSeed(8, 0.30), 2021),
+        runScenario("EarthSeedB", (e) => e.generateVoronoiSeed(10, 0.33), 2022),
+        runScenario("Pangea", (e) => e.generatePangea(), 3030)
+    ];
+
+    Object.assign(CONFIG, localConfig);
+    const elapsed = ((performance.now() - suiteStart) / 1000).toFixed(2);
+    suiteBox.innerHTML = scenarios.map(s => {
+        const icon = s.ok ? '✅' : '❌';
+        const issue = s.ok ? 'PASS' : s.issues.join(' | ');
+        return `${icon} ${s.name}: ${issue}`;
+    }).join("<br>") + `<br><span class="text-slate-500">Duración: ${elapsed}s (36 Ma por escenario)</span>`;
+}
 
 let isDrawing = false;
 function getMousePos(e) {
