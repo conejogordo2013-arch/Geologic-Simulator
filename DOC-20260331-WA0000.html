@@ -111,6 +111,7 @@
                     <button class="layer-btn border border-slate-600 rounded py-1.5 text-[10px] transition text-orange-400" data-layer="mantle">Mantle Instab</button>
                     <button class="layer-btn border border-slate-600 rounded py-1.5 text-[10px] transition text-red-400" data-layer="fracture">Fractures</button>
                     <button class="layer-btn border border-slate-600 rounded py-1.5 text-[10px] transition text-red-500 font-bold" data-layer="magma">Magma Pool</button>
+                    <button class="layer-btn border border-slate-600 rounded py-1.5 text-[10px] transition text-amber-300" data-layer="temperature">Thermal 2D</button>
                 </div>
             </div>
 
@@ -298,7 +299,11 @@ const CONFIG = {
     minOceanicAgeForSubductionMa: 8.0,
     arcMaturationMa: 18.0,
     sedimentSupplyRate: 0.03,
-    maxSedimentThicknessKm: 6.0
+    maxSedimentThicknessKm: 6.0,
+    mantlePotentialTempC: 1320,
+    ridgeThermalBoostC: 180,
+    slabCoolingBoostC: 220,
+    thermalDiffusivity: 0.08
 };
 
 class SeededRNG {
@@ -538,6 +543,8 @@ class TectonicEngine {
         
         this.currMagma = new Float32Array(this.length);
         this.nextMagma = new Float32Array(this.length);
+        this.currTemp = new Float32Array(this.length);
+        this.nextTemp = new Float32Array(this.length);
 
         this.plates = new Array(CONFIG.maxPlates).fill(null).map((_, i) => new Plate(i));
         this.hotspots = [];
@@ -571,6 +578,7 @@ class TectonicEngine {
         this.mantleInstability.fill(0); 
         this.fractureZone.fill(0);
         this.currMagma.fill(0); 
+        this.currTemp.fill(CONFIG.mantlePotentialTempC);
         
         this.hotspots = []; this.age = 0;
         this.plates.forEach(p => { 
@@ -582,6 +590,24 @@ class TectonicEngine {
     calculateIsostaticElevation(thickness, density) {
         let densityDiff = Math.max(0.01, CONFIG.rhoMantle - density);
         return (thickness * densityDiff / CONFIG.rhoMantle) * 1000 - CONFIG.isoOffset;
+    }
+
+    estimateCellTemperature(crustType, ageMa, subductDepth = 0) {
+        if (crustType === 1) return 620 - Math.min(260, ageMa * 1.5);
+        if (crustType === 2) return 860 - Math.min(180, ageMa * 2.0);
+        const ridgeCooling = Math.min(620, ageMa * 3.4);
+        const slabCool = Math.min(260, subductDepth * CONFIG.slabCoolingBoostC);
+        return CONFIG.mantlePotentialTempC - ridgeCooling - slabCool;
+    }
+
+    rebuildThermalFieldFromState() {
+        for (let i = 0; i < this.length; i++) {
+            if (this.currPlate[i] === 0) {
+                this.currTemp[i] = CONFIG.mantlePotentialTempC;
+                continue;
+            }
+            this.currTemp[i] = this.estimateCellTemperature(this.currCrust[i], this.currAge[i], this.currSubduct[i]);
+        }
     }
 
     recountContinentalCells(crustField = this.currCrust, plateField = this.currPlate) {
@@ -684,6 +710,7 @@ class TectonicEngine {
             }
         }
         this.updatePlateVelocities();
+        this.rebuildThermalFieldFromState();
         this.initializeReferenceContinentalMass();
     }
 
@@ -719,6 +746,7 @@ class TectonicEngine {
             }
         }
         this.updatePlateVelocities();
+        this.rebuildThermalFieldFromState();
         this.initializeReferenceContinentalMass();
     }
 
@@ -801,6 +829,7 @@ class TectonicEngine {
             }
         }
         this.updatePlateVelocities();
+        this.rebuildThermalFieldFromState();
         this.initializeReferenceContinentalMass();
     }
 
@@ -820,6 +849,7 @@ class TectonicEngine {
         this.nextStress.fill(0); this.nextTopoOffset.fill(0);
         this.nextAge.fill(0); this.nextSubduct.fill(0);
         this.nextArcAge.fill(0); this.nextSediment.fill(0);
+        this.nextTemp.fill(CONFIG.mantlePotentialTempC);
         this.nextMagma.fill(0); 
         this.thicknessDelta.fill(0);
 
@@ -859,6 +889,7 @@ class TectonicEngine {
                     this.nextArcAge[idx] = 0;
                     this.nextSediment[idx] = 0;
                     this.nextSubduct[idx] = 0;
+                    this.nextTemp[idx] = CONFIG.mantlePotentialTempC + CONFIG.ridgeThermalBoostC * 0.5;
                     this.nextSubX[idx] = 0; this.nextSubY[idx] = 0;
                     this.nextStress[idx] = 0;
                     this.nextMagma[idx] = 0; 
@@ -871,6 +902,7 @@ class TectonicEngine {
 
         this.classifyAndApplyStress(dtYears);
         this.applyGeology(dtYears);
+        this.updateThermodynamics(dtYears);
         this.applyClimateModel(dtYears);
 
         this.checkFragmentation();
@@ -891,6 +923,25 @@ class TectonicEngine {
         let tSed = this.currSediment; this.currSediment = this.nextSediment; this.nextSediment = tSed;
         let tSub = this.currSubduct; this.currSubduct = this.nextSubduct; this.nextSubduct = tSub;
         let tMagma = this.currMagma; this.currMagma = this.nextMagma; this.nextMagma = tMagma;
+        let tTemp = this.currTemp; this.currTemp = this.nextTemp; this.nextTemp = tTemp;
+    }
+
+    updateThermodynamics(dtYears) {
+        const dtMa = dtYears / 1e6;
+        for (let y = 1; y < this.height - 1; y++) {
+            for (let x = 1; x < this.width - 1; x++) {
+                const i = y * this.width + x;
+                if (this.nextPlate[i] === 0) continue;
+
+                const lap = this.nextTemp[i-1] + this.nextTemp[i+1] + this.nextTemp[i-this.width] + this.nextTemp[i+this.width] - 4 * this.nextTemp[i];
+                let t = this.nextTemp[i] + lap * CONFIG.thermalDiffusivity * dtMa;
+                t += this.nextMagma[i] * dtMa * 18.0;
+                if (this.nextSubduct[i] > 0.02) t -= this.nextSubduct[i] * CONFIG.slabCoolingBoostC * dtMa;
+                if (this.boundaryType[i] === 2) t += CONFIG.ridgeThermalBoostC * dtMa * 0.7;
+                if (this.nextCrust[i] === 1) t -= 30.0 * dtMa;
+                this.nextTemp[i] = Math.max(200, Math.min(1600, t));
+            }
+        }
     }
 
     applyClimateModel(dtYears) {
@@ -917,6 +968,8 @@ class TectonicEngine {
                     : (this.nextCrust[idx] === 2
                         ? Math.max(2.72, Math.min(2.95, this.nextDensity[idx]))
                         : Math.max(2.6, Math.min(CONFIG.rhoCont + 0.25, this.nextDensity[idx])));
+                const thermalAnomaly = (CONFIG.mantlePotentialTempC - this.nextTemp[idx]) / 1000.0;
+                this.nextDensity[idx] = Math.max(2.5, Math.min(CONFIG.rhoOldOcean, this.nextDensity[idx] + thermalAnomaly * 0.18));
                 this.nextElev[idx] = this.calculateIsostaticElevation(this.nextThick[idx], this.nextDensity[idx]) + this.nextTopoOffset[idx];
             }
         }
@@ -933,6 +986,7 @@ class TectonicEngine {
             if (!Number.isFinite(this.nextArcAge[i])) this.nextArcAge[i] = 0;
             if (!Number.isFinite(this.nextSediment[i])) this.nextSediment[i] = 0;
             if (!Number.isFinite(this.nextMagma[i])) this.nextMagma[i] = 0;
+            if (!Number.isFinite(this.nextTemp[i])) this.nextTemp[i] = CONFIG.mantlePotentialTempC;
 
             this.nextThick[i] = Math.max(2.0, Math.min(120.0, this.nextThick[i]));
             this.nextDensity[i] = Math.max(2.5, Math.min(CONFIG.rhoOldOcean, this.nextDensity[i]));
@@ -941,6 +995,7 @@ class TectonicEngine {
             this.nextAge[i] = Math.max(0, Math.min(250, this.nextAge[i]));
             this.nextArcAge[i] = Math.max(0, Math.min(250, this.nextArcAge[i]));
             this.nextSediment[i] = Math.max(0, Math.min(CONFIG.maxSedimentThicknessKm, this.nextSediment[i]));
+            this.nextTemp[i] = Math.max(200, Math.min(1600, this.nextTemp[i]));
         }
     }
 
@@ -959,6 +1014,7 @@ class TectonicEngine {
         this.nextSediment[dest] = this.currSediment[src];
         this.nextSubduct[dest] = this.currSubduct[src]; 
         this.nextMagma[dest] = this.currMagma[src]; 
+        this.nextTemp[dest] = this.currTemp[src];
     }
 
     resolveCollision(srcIdx, targetIdx, srcPlate, moveX, moveY) {
@@ -1121,10 +1177,12 @@ class TectonicEngine {
                                 CONFIG.maxSedimentThicknessKm,
                                 this.nextSediment[arcIdx] + CONFIG.sedimentSupplyRate * subductionFactor
                             );
+                            this.nextTemp[arcIdx] = Math.min(1500, this.nextTemp[arcIdx] + CONFIG.ridgeThermalBoostC * subductionFactor * 0.3);
                         }
                     }
 
                     let subDepth = this.nextSubduct[subIdx];
+                    this.nextTemp[subIdx] = Math.max(260, this.nextTemp[subIdx] - CONFIG.slabCoolingBoostC * subProgressRate);
                     let densityExcess = Math.max(0, this.nextDensity[subIdx] - 2.8); 
                     this.plates[subPlate].pullVx += oDirX * subDepth * densityExcess * 50.0;
                     this.plates[subPlate].pullVy += oDirY * subDepth * densityExcess * 50.0;
@@ -1139,6 +1197,8 @@ class TectonicEngine {
             this.nextArcAge[idx2] = 0;
             this.nextSediment[idx1] = 0;
             this.nextSediment[idx2] = 0;
+            this.nextTemp[idx1] = Math.min(1520, CONFIG.mantlePotentialTempC + CONFIG.ridgeThermalBoostC);
+            this.nextTemp[idx2] = Math.min(1520, CONFIG.mantlePotentialTempC + CONFIG.ridgeThermalBoostC);
             this.nextDensity[idx1] = CONFIG.rhoYoungOcean;
             this.nextDensity[idx2] = CONFIG.rhoYoungOcean;
             this.nextThick[idx1] = Math.min(this.nextThick[idx1], CONFIG.baseOceanThick + 2.0);
@@ -1376,6 +1436,7 @@ class TectonicEngine {
                     this.nextThick[i] = CONFIG.baseOceanThick;
                     this.nextTopoOffset[i] = 0;
                     this.nextMagma[i] = 0;
+                    this.nextTemp[i] = CONFIG.mantlePotentialTempC;
                     continue; 
                 }
             }
@@ -1405,6 +1466,7 @@ class TectonicEngine {
                 } else if (this.nextCrust[i] === 0 && nearConvergentOrArc && this.nextMagma[i] > CONFIG.eruptionThreshold * 2.0) {
                     this.nextCrust[i] = 2;
                     this.nextDensity[i] = 2.9;
+                    this.nextTemp[i] = Math.min(1480, this.nextTemp[i] + 80);
                 }
             }
             
@@ -1525,8 +1587,8 @@ class TectonicEngine {
         for (let i = 0; i < this.length; i++) {
             if (this.currPlate[i] === 0) continue;
             activeCells++;
-            const elev = this.currElev[i], dens = this.currDensity[i], thick = this.currThick[i];
-            if (!Number.isFinite(elev) || !Number.isFinite(dens) || !Number.isFinite(thick)) {
+            const elev = this.currElev[i], dens = this.currDensity[i], thick = this.currThick[i], temp = this.currTemp[i];
+            if (!Number.isFinite(elev) || !Number.isFinite(dens) || !Number.isFinite(thick) || !Number.isFinite(temp)) {
                 invalidNumeric++;
                 continue;
             }
@@ -1561,6 +1623,8 @@ class TectonicEngine {
         if (avgContElev < -300 || avgContElev > 2800) issues.push(`Elevación continental media no realista (${avgContElev.toFixed(0)} m)`);
         if (avgOceanElev > -800 || avgOceanElev < -6500) issues.push(`Profundidad oceánica media no realista (${avgOceanElev.toFixed(0)} m)`);
         if (avgContDensity >= avgOceanDensity) issues.push(`Densidades invertidas (continente >= océano)`);
+        const avgTemp = activeCells > 0 ? this.currTemp.reduce((acc, t, idx) => acc + (this.currPlate[idx] !== 0 ? t : 0), 0) / activeCells : CONFIG.mantlePotentialTempC;
+        if (avgTemp < 350 || avgTemp > 1450) issues.push(`Temperatura litosférica media no realista (${avgTemp.toFixed(0)} °C)`);
         if (growthPctPerMa > CONFIG.continentalAccretionRatePctPerMa * 1.6) issues.push(`Crecimiento continental demasiado rápido (${growthPctPerMa.toFixed(3)}%/Ma)`);
         if (continentalAtDorsal > 0) issues.push(`ERROR: Se detectó continente sobre dorsal divergente (${continentalAtDorsal} celdas)`);
 
@@ -1575,7 +1639,7 @@ class TectonicEngine {
     }
 
     validate() {
-        let maxThick = 0, contCells = 0, arcCells = 0, totalCells = 0, subductingCells = 0, activeMagma = 0, invalidCells = 0, sedimentSum = 0;
+        let maxThick = 0, contCells = 0, arcCells = 0, totalCells = 0, subductingCells = 0, activeMagma = 0, invalidCells = 0, sedimentSum = 0, tempSum = 0;
         for(let i=0; i<this.length; i++) {
             if(this.currPlate[i] !== 0) {
                 totalCells++;
@@ -1585,12 +1649,14 @@ class TectonicEngine {
                 if(this.currSubduct[i] > 0) subductingCells++;
                 if(this.currMagma[i] > 0.1) activeMagma++;
                 sedimentSum += this.currSediment[i];
+                tempSum += this.currTemp[i];
                 if (!Number.isFinite(this.currThick[i]) || !Number.isFinite(this.currDensity[i]) || !Number.isFinite(this.currElev[i]) || !Number.isFinite(this.currAge[i])) invalidCells++; 
             }
         }
         let contRatio = totalCells > 0 ? ((contCells / totalCells) * 100).toFixed(1) : 0;
         let arcRatio = totalCells > 0 ? ((arcCells / totalCells) * 100).toFixed(1) : 0;
         let avgSed = totalCells > 0 ? (sedimentSum / totalCells).toFixed(2) : "0.00";
+        let avgTemp = totalCells > 0 ? (tempSum / totalCells).toFixed(0) : "0";
         const elapsedMa = Math.max(0.001, this.age / 1e6);
         const growthRatePctPerMa = this.initialContinentCells > 0 ? (((contCells - this.initialContinentCells) / this.initialContinentCells) * 100 / elapsedMa) : 0;
         let activePlates = this.plates.filter(p => p.active).length;
@@ -1603,6 +1669,7 @@ class TectonicEngine {
             `Volcanic Arc Vol: <span class="text-amber-300">${arcRatio}%</span>`,
             `Growth Rate: <span class="${growthRatePctPerMa <= CONFIG.continentalAccretionRatePctPerMa ? 'text-green-300' : 'text-red-300'}">${growthRatePctPerMa.toFixed(3)} %/Ma</span>`,
             `Sediment Buffer: <span class="text-yellow-200">${avgSed} km</span>`,
+            `Lithosphere Temp: <span class="text-amber-200">${avgTemp} °C</span>`,
             `Max Crust Thick: <span class="text-white">${maxThick.toFixed(1)} km</span>`,
             `Sinking Slabs: <span class="text-slate-400 font-bold">${subductingCells}</span>`,
             `Active Hotspots: <span class="text-orange-400 font-bold">${this.hotspots.length}</span>`,
@@ -1720,6 +1787,12 @@ class Renderer {
                     r = 100 + m*155; g = m*120; b = m*30;
                 } else { r=5; g=5; b=10; }
             }
+            else if(this.mode === 'temperature') {
+                const tNorm = Math.max(0, Math.min(1, (e.currTemp[i] - 200) / 1400));
+                r = Math.floor(40 + 215 * tNorm);
+                g = Math.floor(30 + 180 * (1 - Math.abs(tNorm - 0.5) * 1.6));
+                b = Math.floor(220 - 180 * tNorm);
+            }
 
             data[px] = r; data[px+1] = g; data[px+2] = b; data[px+3] = 255;
         }
@@ -1801,7 +1874,8 @@ const LAYER_LEGENDS = {
     stress: [['#00FF66', 'Estrés bajo'], ['#FFBF00', 'Estrés moderado'], ['#FF2020', 'Estrés extremo']],
     mantle: [['#111111', 'Manto estable'], ['#FF8C00', 'Inestabilidad creciente'], ['#FF0000', 'Inestabilidad crítica']],
     fracture: [['#002255', 'Sin fracturas'], ['#FFD600', 'Fracturación intermedia'], ['#FFFFFF', 'Fracturación extrema']],
-    magma: [['#05050A', 'Sin magma'], ['#FF7A1A', 'Magma activo'], ['#FF2A00', 'Acumulación volcánica intensa']]
+    magma: [['#05050A', 'Sin magma'], ['#FF7A1A', 'Magma activo'], ['#FF2A00', 'Acumulación volcánica intensa']],
+    temperature: [['#2A4BFF', 'Litosfera fría / vieja'], ['#F0D34A', 'Transición térmica'], ['#FF4A1F', 'Litosfera caliente / dorsal']]
 };
 
 function renderLegend(mode) {
@@ -1997,6 +2071,9 @@ function applyTool(pos) {
                         thick: engine.currThick[idx],
                         density: engine.currDensity[idx],
                         age: engine.currAge[idx],
+                        arcAge: engine.currArcAge[idx],
+                        sediment: engine.currSediment[idx],
+                        temp: engine.currTemp[idx],
                         elev: engine.currElev[idx]
                     });
                     engine.currPlate[idx] = pid;
@@ -2012,19 +2089,27 @@ function applyTool(pos) {
                         engine.currThick[idx] = CONFIG.baseContThick + 2 + nThick * 5 * reliefIntensity; 
                         engine.currDensity[idx] = CONFIG.rhoCont;
                         engine.currAge[idx] = 1.0;
+                        engine.currArcAge[idx] = 0;
+                        engine.currSediment[idx] = Math.min(CONFIG.maxSedimentThicknessKm, engine.currSediment[idx] + 0.4);
+                        engine.currTemp[idx] = 600;
                     } else if(currentTool === 'ocean') {
                         engine.currCrust[idx] = 0; 
                         engine.currThick[idx] = CONFIG.baseOceanThick + nThick * reliefIntensity; 
                         engine.currDensity[idx] = CONFIG.rhoYoungOcean;
                         engine.currAge[idx] = 0;
+                        engine.currArcAge[idx] = 0;
+                        engine.currSediment[idx] = 0;
+                        engine.currTemp[idx] = CONFIG.mantlePotentialTempC + CONFIG.ridgeThermalBoostC * 0.5;
                     } else if(currentTool === 'mountain') {
                         engine.currCrust[idx] = 1;
                         engine.currThick[idx] = Math.min(120, engine.currThick[idx] + (1.2 + nThick) * reliefIntensity);
                         engine.currDensity[idx] = Math.max(2.6, engine.currDensity[idx] - 0.03 * reliefIntensity);
+                        engine.currTemp[idx] = Math.max(450, engine.currTemp[idx] - 25 * reliefIntensity);
                     } else if(currentTool === 'trench') {
                         engine.currCrust[idx] = 0;
                         engine.currThick[idx] = Math.max(2, engine.currThick[idx] - (0.8 + Math.abs(nThick)) * reliefIntensity);
                         engine.currDensity[idx] = Math.min(CONFIG.rhoOldOcean, engine.currDensity[idx] + 0.02 * reliefIntensity);
+                        engine.currTemp[idx] = Math.max(280, engine.currTemp[idx] - 40 * reliefIntensity);
                     } else if(currentTool === 'smooth') {
                         let n = (ny > 0) ? (ny - 1) * engine.width + nx : idx;
                         let s = (ny < engine.height - 1) ? (ny + 1) * engine.width + nx : idx;
@@ -2050,6 +2135,9 @@ function applyTool(pos) {
                 engine.currThick[cell.idx] = cell.thick;
                 engine.currDensity[cell.idx] = cell.density;
                 engine.currAge[cell.idx] = cell.age;
+                engine.currArcAge[cell.idx] = cell.arcAge;
+                engine.currSediment[cell.idx] = cell.sediment;
+                engine.currTemp[cell.idx] = cell.temp;
                 engine.currElev[cell.idx] = cell.elev;
             }
         }
