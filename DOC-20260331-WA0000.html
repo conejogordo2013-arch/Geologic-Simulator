@@ -44,7 +44,7 @@
     <div class="panel left-panel w-80 h-full flex flex-col z-10 shadow-2xl relative custom-scrollbar overflow-y-auto">
         <div class="p-5 border-b border-slate-700">
             <h1 class="text-xl font-bold text-blue-400 tracking-wide uppercase">Tectonic Engine</h1>
-            <p class="text-xs text-slate-400 mt-1">v9.0: Earth-Grade Dynamics & Validation</p>
+            <p class="text-xs text-slate-400 mt-1">v9.1: Earth-Grade Dynamics & Validation</p>
             <p class="text-[11px] text-emerald-300 mt-2 font-semibold">Resultados correctos incluso en simulaciones largas.</p>
         </div>
 
@@ -129,7 +129,7 @@
                 </div>
                 <div class="flex items-center gap-2 mt-2">
                     <label class="text-xs text-slate-400">Target Plate ID:</label>
-                    <input type="number" id="input-plate-id" min="1" max="15" value="1" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs w-16 text-white">
+                    <input type="number" id="input-plate-id" min="1" max="31" value="1" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs w-16 text-white">
                 </div>
                 <div class="mt-3 space-y-2">
                     <div>
@@ -1904,8 +1904,49 @@ let animationFrameId;
 
 let timeAccumulator = 0;
 
+function randomSeed32() {
+    return Math.floor(Math.random() * 0xFFFFFFFF) >>> 0;
+}
+
+function mapPassesCorePhysics(report, presetName = 'earth') {
+    const blocking = report.issues.filter(issue =>
+        issue.includes('Valores no numéricos') ||
+        issue.includes('Densidades invertidas') ||
+        issue.includes('Crecimiento continental demasiado rápido') ||
+        issue.includes('continente sobre dorsal')
+    );
+    if (blocking.length > 0) return false;
+    if (presetName === 'earth' || presetName === 'earthtoday') return report.earthScore >= 50;
+    if (presetName === 'ocean') return report.earthScore >= 30;
+    return true;
+}
+
+function generateRandomValidMap(presetName = 'earth', maxAttempts = 18) {
+    let accepted = false;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const seed = randomSeed32();
+        CONFIG.randomSeed = seed;
+        engine.setSeed(seed);
+        document.getElementById('input-seed').value = seed;
+        if (presetName === 'pangea') engine.generatePangea();
+        else if (presetName === 'ocean') engine.generateVoronoiSeed(15, 0.05);
+        else if (presetName === 'earthtoday') engine.generateEarthTodayApprox();
+        else engine.generateVoronoiSeed(8, 0.3);
+
+        const report = engine.validatePhysicalPlausibility();
+        if (mapPassesCorePhysics(report, presetName)) {
+            accepted = true;
+            break;
+        }
+    }
+    if (!accepted) {
+        console.warn(`No valid random map found for preset=${presetName} in ${maxAttempts} attempts. Using last candidate.`);
+    }
+    resetSim();
+}
+
 generateConfigUI();
-engine.generateVoronoiSeed(8, 0.3); 
+generateRandomValidMap('earth');
 updateValidation(); renderer.render(); renderLegend(renderer.mode);
 
 document.getElementById('btn-play').addEventListener('click', () => { 
@@ -1976,16 +2017,19 @@ document.querySelectorAll('.tool-btn').forEach(btn => {
     });
 });
 
-document.getElementById('btn-preset-earth').addEventListener('click', () => { engine.generateVoronoiSeed(8, 0.3); resetSim(); });
-document.getElementById('btn-preset-pangea').addEventListener('click', () => { engine.generatePangea(); resetSim(); });
-document.getElementById('btn-preset-ocean').addEventListener('click', () => { engine.generateVoronoiSeed(15, 0.05); resetSim(); });
+document.getElementById('btn-preset-earth').addEventListener('click', () => generateRandomValidMap('earth'));
+document.getElementById('btn-preset-pangea').addEventListener('click', () => generateRandomValidMap('pangea'));
+document.getElementById('btn-preset-ocean').addEventListener('click', () => generateRandomValidMap('ocean'));
 document.getElementById('btn-run-tests').addEventListener('click', () => runGeoValidationSuite());
 
 function resetSim() {
     engine.age = 0;
     engine.initializeReferenceContinentalMass();
     timeAccumulator = 0; 
-    engine.targetSpeedMultiplier = parseFloat(sliderSpeed.value);
+    const speedSlider = document.getElementById('slider-speed-mult');
+    const parsedSpeed = speedSlider ? parseFloat(speedSlider.value) : 1.0;
+    const speedValue = Number.isFinite(parsedSpeed) ? parsedSpeed : 1.0;
+    engine.targetSpeedMultiplier = speedValue;
     engine.currentSpeedMultiplier = engine.targetSpeedMultiplier;
     engine.updatePlateVelocities(); updateValidation();
     document.getElementById('lbl-avg-speed').innerText = engine.averageSpeed.toFixed(1);
@@ -2050,7 +2094,9 @@ function getTouchPos(touch) {
 function applyTool(pos) {
     if(currentTool === 'none') return;
     let pid = parseInt(document.getElementById('input-plate-id').value) || 1;
-    if(pid < 1 || pid >= CONFIG.maxPlates) pid = 1;
+    if (!Number.isFinite(pid)) pid = 1;
+    pid = Math.max(1, Math.min(CONFIG.maxPlates - 1, pid));
+    document.getElementById('input-plate-id').value = pid;
     const strictPhysics = document.getElementById('toggle-strict-physics').checked;
 
     if(currentTool === 'hotspot') {
@@ -2135,6 +2181,8 @@ function applyTool(pos) {
         }
     }
 
+    if (touched.length === 0) return;
+
     if (strictPhysics) {
         const physicalCheck = engine.validatePhysicalPlausibility();
         if (!physicalCheck.ok) {
@@ -2149,6 +2197,24 @@ function applyTool(pos) {
                 engine.currTemp[cell.idx] = cell.temp;
                 engine.currElev[cell.idx] = cell.elev;
             }
+        } else {
+            for (const cell of touched) {
+                const i = cell.idx;
+                engine.currThick[i] = Math.max(2, Math.min(120, engine.currThick[i]));
+                engine.currDensity[i] = Math.max(2.5, Math.min(CONFIG.rhoOldOcean, engine.currDensity[i]));
+                engine.currTemp[i] = Math.max(200, Math.min(1600, engine.currTemp[i]));
+                engine.currSediment[i] = Math.max(0, Math.min(CONFIG.maxSedimentThicknessKm, engine.currSediment[i]));
+                if (!Number.isFinite(engine.currAge[i])) engine.currAge[i] = 0;
+                if (!Number.isFinite(engine.currArcAge[i])) engine.currArcAge[i] = 0;
+            }
+        }
+    } else {
+        for (const cell of touched) {
+            const i = cell.idx;
+            engine.currThick[i] = Math.max(2, Math.min(120, engine.currThick[i]));
+            engine.currDensity[i] = Math.max(2.5, Math.min(CONFIG.rhoOldOcean, engine.currDensity[i]));
+            engine.currTemp[i] = Math.max(200, Math.min(1600, engine.currTemp[i]));
+            engine.currSediment[i] = Math.max(0, Math.min(CONFIG.maxSedimentThicknessKm, engine.currSediment[i]));
         }
     }
 
