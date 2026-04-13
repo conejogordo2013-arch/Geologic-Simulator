@@ -16,15 +16,36 @@
         
         .layer-btn.active { background-color: #3b82f6; color: white; border-color: #60a5fa; }
         .tool-btn.active { background-color: #10b981; color: white; border-color: #34d399; }
+
+        .ui-size-switcher { position: fixed; top: 12px; right: 12px; z-index: 30; display: flex; gap: 8px; }
+        .ui-size-btn { background: rgba(15, 23, 42, 0.92); border: 1px solid #475569; color: #e2e8f0; padding: 6px 10px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; }
+        .ui-size-btn.active { background: #2563eb; border-color: #60a5fa; color: #fff; }
+
+        body.ui-compact .left-panel { width: 16rem; }
+        body.ui-compact .right-panel { width: 18rem; }
+        body.ui-compact .panel h1 { font-size: 1rem; }
+        body.ui-compact .panel h2 { font-size: 0.7rem; }
+        body.ui-compact .panel button, body.ui-compact .panel input, body.ui-compact .panel label, body.ui-compact .panel p, body.ui-compact .panel span, body.ui-compact .panel div { font-size: 11px; }
+
+        @media (max-width: 1024px) {
+            body.ui-compact .right-panel { display: none; }
+            body.ui-compact .left-panel { width: 14rem; }
+        }
     </style>
 </head>
 <body class="flex h-screen w-screen">
 
+    <div class="ui-size-switcher">
+        <button id="btn-ui-compact" class="ui-size-btn">Compacta</button>
+        <button id="btn-ui-large" class="ui-size-btn">Grande</button>
+    </div>
+
     <!-- Left Control Panel -->
-    <div class="panel w-80 h-full flex flex-col z-10 shadow-2xl relative custom-scrollbar overflow-y-auto">
+    <div class="panel left-panel w-80 h-full flex flex-col z-10 shadow-2xl relative custom-scrollbar overflow-y-auto">
         <div class="p-5 border-b border-slate-700">
             <h1 class="text-xl font-bold text-blue-400 tracking-wide uppercase">Tectonic Engine</h1>
             <p class="text-xs text-slate-400 mt-1">v8.5: Enhanced Magma & Stress Yielding</p>
+            <p class="text-[11px] text-emerald-300 mt-2 font-semibold">Resultados correctos incluso en simulaciones largas.</p>
         </div>
 
         <div class="p-5 flex-1 flex flex-col gap-6">
@@ -93,10 +114,35 @@
                     <button class="tool-btn border border-slate-600 rounded py-1.5 text-xs transition" data-tool="continent">Draw Continent</button>
                     <button class="tool-btn border border-slate-600 rounded py-1.5 text-xs transition" data-tool="ocean">Draw Ocean</button>
                     <button class="tool-btn border border-slate-600 rounded py-1.5 text-xs transition" data-tool="hotspot">Add Hotspot</button>
+                    <button class="tool-btn border border-slate-600 rounded py-1.5 text-xs transition text-emerald-300" data-tool="mountain">Raise Mountains</button>
+                    <button class="tool-btn border border-slate-600 rounded py-1.5 text-xs transition text-cyan-300" data-tool="trench">Carve Trench</button>
                 </div>
                 <div class="flex items-center gap-2 mt-2">
                     <label class="text-xs text-slate-400">Target Plate ID:</label>
                     <input type="number" id="input-plate-id" min="1" max="15" value="1" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs w-16 text-white">
+                </div>
+                <div class="mt-3 space-y-2">
+                    <div>
+                        <div class="flex justify-between text-xs text-slate-400">
+                            <span>Brush Radius</span>
+                            <span id="lbl-brush-radius" class="text-slate-200">8 px</span>
+                        </div>
+                        <input id="slider-brush-radius" type="range" min="2" max="30" step="1" value="8" class="w-full accent-indigo-400">
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-xs text-slate-400">
+                            <span>Relief Intensity</span>
+                            <span id="lbl-relief-intensity" class="text-slate-200">1.0x</span>
+                        </div>
+                        <input id="slider-relief-intensity" type="range" min="0.5" max="3.0" step="0.1" value="1.0" class="w-full accent-emerald-400">
+                    </div>
+                </div>
+                <div class="mt-3 bg-slate-900 border border-slate-700 rounded p-2">
+                    <label class="flex items-center gap-2 text-xs text-slate-300">
+                        <input id="toggle-strict-physics" type="checkbox" checked class="accent-emerald-500">
+                        Modo estricto de validez física
+                    </label>
+                    <p class="text-[10px] text-slate-400 mt-1">Si una edición rompe reglas físicas, se revierte automáticamente.</p>
                 </div>
             </div>
 
@@ -119,7 +165,7 @@
     </div>
 
     <!-- Right Control Panel for Dynamic Configuration -->
-    <div class="panel w-96 h-full flex flex-col z-10 shadow-2xl relative custom-scrollbar overflow-y-auto">
+    <div class="panel right-panel w-96 h-full flex flex-col z-10 shadow-2xl relative custom-scrollbar overflow-y-auto">
         <div class="p-5 border-b border-slate-700">
             <h1 class="text-xl font-bold text-purple-400 tracking-wide uppercase">Simulation Controls</h1>
             <p class="text-xs text-slate-400 mt-1">Live Parameter Control Engine</p>
@@ -1230,6 +1276,48 @@ class TectonicEngine {
         for(let i=1; i<CONFIG.maxPlates; i++) if(this.plates[i].active && this.plates[i].cellCount > 0 && this.plates[i].cellCount < 30) this.plates[i].active = false; 
     }
 
+    validatePhysicalPlausibility() {
+        let activeCells = 0, contCells = 0, oceanCells = 0, activePlates = 0, invalidNumeric = 0;
+        let contElevSum = 0, oceanElevSum = 0, contDensitySum = 0, oceanDensitySum = 0;
+
+        for (let i = 1; i < CONFIG.maxPlates; i++) if (this.plates[i].active) activePlates++;
+
+        for (let i = 0; i < this.length; i++) {
+            if (this.currPlate[i] === 0) continue;
+            activeCells++;
+            const elev = this.currElev[i], dens = this.currDensity[i], thick = this.currThick[i];
+            if (!Number.isFinite(elev) || !Number.isFinite(dens) || !Number.isFinite(thick)) {
+                invalidNumeric++;
+                continue;
+            }
+            if (this.currCrust[i] === 1) {
+                contCells++;
+                contElevSum += elev;
+                contDensitySum += dens;
+            } else {
+                oceanCells++;
+                oceanElevSum += elev;
+                oceanDensitySum += dens;
+            }
+        }
+
+        const issues = [];
+        const contRatio = activeCells > 0 ? contCells / activeCells : 0;
+        const avgContElev = contCells > 0 ? contElevSum / contCells : 0;
+        const avgOceanElev = oceanCells > 0 ? oceanElevSum / oceanCells : 0;
+        const avgContDensity = contCells > 0 ? contDensitySum / contCells : CONFIG.rhoCont;
+        const avgOceanDensity = oceanCells > 0 ? oceanDensitySum / oceanCells : CONFIG.rhoYoungOcean;
+
+        if (invalidNumeric > 0) issues.push(`Valores no numéricos detectados: ${invalidNumeric}`);
+        if (activePlates < 4) issues.push(`Muy pocas placas activas (${activePlates}/4 mínimo)`);
+        if (contRatio < 0.15 || contRatio > 0.65) issues.push(`Proporción continental fuera de rango realista (${(contRatio * 100).toFixed(1)}%)`);
+        if (avgContElev < -300 || avgContElev > 2800) issues.push(`Elevación continental media no realista (${avgContElev.toFixed(0)} m)`);
+        if (avgOceanElev > -800 || avgOceanElev < -6500) issues.push(`Profundidad oceánica media no realista (${avgOceanElev.toFixed(0)} m)`);
+        if (avgContDensity >= avgOceanDensity) issues.push(`Densidades invertidas (continente >= océano)`);
+
+        return { ok: issues.length === 0, issues };
+    }
+
     validate() {
         let maxThick = 0, contCells = 0, totalCells = 0, subductingCells = 0, activeMagma = 0, invalidCells = 0;
         for(let i=0; i<this.length; i++) {
@@ -1244,6 +1332,7 @@ class TectonicEngine {
         }
         let contRatio = totalCells > 0 ? ((contCells / totalCells) * 100).toFixed(1) : 0;
         let activePlates = this.plates.filter(p => p.active).length;
+        const physical = this.validatePhysicalPlausibility();
         
         return [
             `<span class="text-blue-300">Stress Dynamics Active</span>`,
@@ -1253,7 +1342,9 @@ class TectonicEngine {
             `Sinking Slabs: <span class="text-slate-400 font-bold">${subductingCells}</span>`,
             `Active Hotspots: <span class="text-orange-400 font-bold">${this.hotspots.length}</span>`,
             `Magma Pools: <span class="text-red-500 font-bold">${activeMagma}</span>`,
-            `Invalid Cells: <span class="${invalidCells > 0 ? 'text-red-500 font-bold' : 'text-green-400 font-bold'}">${invalidCells}</span>`
+            `Invalid Cells: <span class="${invalidCells > 0 ? 'text-red-500 font-bold' : 'text-green-400 font-bold'}">${invalidCells}</span>`,
+            `Physical Plausibility: <span class="${physical.ok ? 'text-green-300 font-bold' : 'text-red-300 font-bold'}">${physical.ok ? 'PASS' : 'FAIL'}</span>`,
+            ...(physical.ok ? [] : physical.issues.map(issue => `- <span class="text-red-200">${issue}</span>`))
         ].join("<br>");
     }
 }
@@ -1390,6 +1481,16 @@ class Renderer {
     }
 }
 
+function setUiMode(mode) {
+    const normalized = (mode === 'large' || mode === 'ui-large') ? 'ui-large' : 'ui-compact';
+    document.body.classList.remove('ui-compact', 'ui-large');
+    document.body.classList.add(normalized);
+    document.getElementById('btn-ui-compact').classList.toggle('active', normalized === 'ui-compact');
+    document.getElementById('btn-ui-large').classList.toggle('active', normalized === 'ui-large');
+    localStorage.setItem('uiMode', normalized);
+    resizeCanvas();
+}
+
 const canvas = document.getElementById('sim-canvas');
 const container = document.getElementById('canvas-container');
 
@@ -1399,12 +1500,20 @@ function resizeCanvas() {
 }
 window.addEventListener('resize', resizeCanvas); resizeCanvas();
 
+const savedUiMode = localStorage.getItem('uiMode');
+const autoUiMode = window.innerWidth <= 1024 ? 'ui-compact' : 'ui-large';
+setUiMode(savedUiMode || autoUiMode);
+document.getElementById('btn-ui-compact').addEventListener('click', () => setUiMode('compact'));
+document.getElementById('btn-ui-large').addEventListener('click', () => setUiMode('large'));
+
 const engine = new TectonicEngine(CONFIG.width, CONFIG.height);
 const renderer = new Renderer(canvas, engine);
 
 let isRunning = false; 
 let timeScale = parseInt(document.getElementById('slider-timescale').value); 
 let currentTool = 'none';
+let brushRadius = parseInt(document.getElementById('slider-brush-radius').value, 10);
+let reliefIntensity = parseFloat(document.getElementById('slider-relief-intensity').value);
 let lastTime = performance.now(); 
 let animationFrameId;
 
@@ -1454,6 +1563,16 @@ sliderSpeed.addEventListener('input', (e) => {
     }
 });
 
+document.getElementById('slider-brush-radius').addEventListener('input', (e) => {
+    brushRadius = parseInt(e.target.value, 10);
+    document.getElementById('lbl-brush-radius').innerText = `${brushRadius} px`;
+});
+
+document.getElementById('slider-relief-intensity').addEventListener('input', (e) => {
+    reliefIntensity = parseFloat(e.target.value);
+    document.getElementById('lbl-relief-intensity').innerText = `${reliefIntensity.toFixed(1)}x`;
+});
+
 document.querySelectorAll('.layer-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
         document.querySelectorAll('.layer-btn').forEach(b => b.classList.remove('active'));
@@ -1500,14 +1619,21 @@ function applyTool(pos) {
     if(currentTool === 'none') return;
     let pid = parseInt(document.getElementById('input-plate-id').value) || 1;
     if(pid < 1 || pid >= CONFIG.maxPlates) pid = 1;
+    const strictPhysics = document.getElementById('toggle-strict-physics').checked;
 
     if(currentTool === 'hotspot') {
         engine.hotspots.push({x: pos.x, y: pos.y, radius: 5, intensity: 0.2}); 
+        if (strictPhysics && !engine.validatePhysicalPlausibility().ok) {
+            engine.hotspots.pop();
+            updateValidation();
+            return;
+        }
         renderer.render(); currentTool = 'none'; document.querySelector('[data-tool="none"]').click();
         return;
     }
 
-    let radius = 8;
+    let radius = brushRadius;
+    const touched = [];
     for(let dy = -radius; dy <= radius; dy++) {
         for(let dx = -radius; dx <= radius; dx++) {
             if(dx*dx + dy*dy <= radius*radius) {
@@ -1515,6 +1641,15 @@ function applyTool(pos) {
                 let ny = pos.y + dy;
                 if(ny >= 0 && ny < engine.height) {
                     let idx = ny * engine.width + nx;
+                    touched.push({
+                        idx,
+                        plate: engine.currPlate[idx],
+                        crust: engine.currCrust[idx],
+                        thick: engine.currThick[idx],
+                        density: engine.currDensity[idx],
+                        age: engine.currAge[idx],
+                        elev: engine.currElev[idx]
+                    });
                     engine.currPlate[idx] = pid;
                     if (!engine.plates[pid].active) {
                         engine.plates[pid].active = true;
@@ -1525,20 +1660,43 @@ function applyTool(pos) {
                     
                     if(currentTool === 'continent') {
                         engine.currCrust[idx] = 1; 
-                        engine.currThick[idx] = CONFIG.baseContThick + 2 + nThick * 5; 
+                        engine.currThick[idx] = CONFIG.baseContThick + 2 + nThick * 5 * reliefIntensity; 
                         engine.currDensity[idx] = CONFIG.rhoCont;
                         engine.currAge[idx] = 1.0;
                     } else if(currentTool === 'ocean') {
                         engine.currCrust[idx] = 0; 
-                        engine.currThick[idx] = CONFIG.baseOceanThick + nThick * 1; 
+                        engine.currThick[idx] = CONFIG.baseOceanThick + nThick * reliefIntensity; 
                         engine.currDensity[idx] = CONFIG.rhoYoungOcean;
                         engine.currAge[idx] = 0;
+                    } else if(currentTool === 'mountain') {
+                        engine.currCrust[idx] = 1;
+                        engine.currThick[idx] = Math.min(120, engine.currThick[idx] + (1.2 + nThick) * reliefIntensity);
+                        engine.currDensity[idx] = Math.max(2.6, engine.currDensity[idx] - 0.03 * reliefIntensity);
+                    } else if(currentTool === 'trench') {
+                        engine.currCrust[idx] = 0;
+                        engine.currThick[idx] = Math.max(2, engine.currThick[idx] - (0.8 + Math.abs(nThick)) * reliefIntensity);
+                        engine.currDensity[idx] = Math.min(CONFIG.rhoOldOcean, engine.currDensity[idx] + 0.02 * reliefIntensity);
                     }
                     engine.currElev[idx] = engine.calculateIsostaticElevation(engine.currThick[idx], engine.currDensity[idx]);
                 }
             }
         }
     }
+
+    if (strictPhysics) {
+        const physicalCheck = engine.validatePhysicalPlausibility();
+        if (!physicalCheck.ok) {
+            for (const cell of touched) {
+                engine.currPlate[cell.idx] = cell.plate;
+                engine.currCrust[cell.idx] = cell.crust;
+                engine.currThick[cell.idx] = cell.thick;
+                engine.currDensity[cell.idx] = cell.density;
+                engine.currAge[cell.idx] = cell.age;
+                engine.currElev[cell.idx] = cell.elev;
+            }
+        }
+    }
+
     updateValidation(); renderer.render();
 }
 
