@@ -82,6 +82,31 @@
                 <div class="text-xs text-slate-400 mt-3 text-right">Age: <span id="lbl-age" class="text-blue-300 font-mono">0</span> yrs</div>
             </div>
 
+            <div>
+                <h2 class="text-sm font-semibold text-slate-300 mb-2 uppercase tracking-wider">Planet Creator</h2>
+                <div class="bg-slate-900 border border-slate-700 rounded p-3 space-y-2">
+                    <input id="planet-name" type="text" value="Aurelia" class="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs" placeholder="Planet name">
+                    <div class="grid grid-cols-2 gap-2">
+                        <input id="planet-mass" type="number" step="0.1" value="1.0" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs" placeholder="Mass (Earth=1)">
+                        <input id="planet-radius" type="number" step="0.1" value="1.0" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs" placeholder="Radius (Earth=1)">
+                        <input id="planet-distance" type="number" step="0.01" value="1.0" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs" placeholder="Star dist AU">
+                        <input id="planet-rotation" type="number" step="0.1" value="24" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs" placeholder="Rotation h">
+                        <input id="planet-internal" type="number" step="0.1" value="1.0" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs" placeholder="Internal activity">
+                        <input id="planet-tilt" type="number" step="0.1" value="23.4" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs" placeholder="Axial tilt°">
+                        <select id="planet-composition" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs">
+                            <option value="silicate">Silicate</option>
+                            <option value="iron-rich">Iron Rich</option>
+                            <option value="water-rich">Water Rich</option>
+                        </select>
+                        <select id="sim-precision" class="bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs">
+                            <option value="high">Precisión alta</option>
+                            <option value="fast">Simulación rápida</option>
+                        </select>
+                    </div>
+                    <button id="btn-planet-apply" class="w-full bg-purple-800 hover:bg-purple-700 transition py-1.5 rounded text-xs font-bold">Apply Planet Genesis</button>
+                </div>
+            </div>
+
             <!-- Validation System -->
             <div>
                 <h2 class="text-sm font-semibold text-slate-300 mb-2 uppercase tracking-wider">Geophysical Status</h2>
@@ -112,6 +137,11 @@
                     <button class="layer-btn border border-slate-600 rounded py-1.5 text-[10px] transition text-red-400" data-layer="fracture">Fractures</button>
                     <button class="layer-btn border border-slate-600 rounded py-1.5 text-[10px] transition text-red-500 font-bold" data-layer="magma">Magma Pool</button>
                     <button class="layer-btn border border-slate-600 rounded py-1.5 text-[10px] transition text-amber-300" data-layer="temperature">Thermal 2D</button>
+                    <button class="layer-btn border border-slate-600 rounded py-1.5 text-[10px] transition text-cyan-200" data-layer="climate">Climate</button>
+                    <button class="layer-btn border border-slate-600 rounded py-1.5 text-[10px] transition text-blue-200" data-layer="hydro">Hydrosphere</button>
+                    <button class="layer-btn border border-slate-600 rounded py-1.5 text-[10px] transition text-lime-200" data-layer="biosphere">Biosphere</button>
+                    <button class="layer-btn border border-slate-600 rounded py-1.5 text-[10px] transition text-fuchsia-200" data-layer="intelligence">Intelligence</button>
+                    <button class="layer-btn border border-slate-600 rounded py-1.5 text-[10px] transition text-orange-200" data-layer="lifecycle">Lifecycle</button>
                 </div>
             </div>
 
@@ -193,6 +223,7 @@
                 <input id="input-seed" type="number" value="123456789" class="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1 text-xs text-white">
                 <button id="btn-apply-seed" class="bg-purple-700 hover:bg-purple-600 transition px-2 py-1 rounded text-xs font-bold">Apply</button>
             </div>
+            <div id="planet-status" class="mt-2 bg-slate-950 border border-slate-700 rounded p-2 text-[11px] text-slate-300 font-mono leading-tight">Planet systems idle.</div>
         </div>
 
         <div class="p-5 flex-1 flex flex-col gap-4" id="config-sliders-container">
@@ -1691,6 +1722,476 @@ class TectonicEngine {
     }
 }
 
+
+
+TectonicEngine.prototype.getGlobalOutputs = function() {
+    let avgElev = 0, avgStress = 0, avgTemp = 0, volcanic = 0, oceanCells = 0, landCells = 0, wettable = 0;
+    let denseOcean = 0, youngOcean = 0;
+    for (let i = 0; i < this.length; i++) {
+        avgElev += this.currElev[i];
+        avgStress += this.stress[i];
+        avgTemp += this.currTemp[i];
+        volcanic += this.currMagma[i];
+        if (this.currElev[i] <= 0) oceanCells++; else landCells++;
+        if (this.currElev[i] < 1500) wettable++;
+        if (this.currCrust[i] === 0 && this.currDensity[i] > 3.05) denseOcean++;
+        if (this.currCrust[i] === 0 && this.currAge[i] < 12) youngOcean++;
+    }
+    const activePlates = this.plates.filter(p => p.active).length;
+    return {
+        stressMap: this.stress,
+        elevationMap: this.currElev,
+        crustAge: this.currAge,
+        fractureMap: this.fractureZone,
+        densityMap: this.currDensity,
+        crustMap: this.currCrust,
+        thicknessMap: this.currThick,
+        plateVelocity: this.averageSpeed,
+        volcanicActivityIndex: volcanic / Math.max(1, this.length) + this.hotspots.length * 0.02,
+        averageElevation: avgElev / this.length,
+        averageStress: avgStress / this.length,
+        averageTemp: avgTemp / this.length,
+        activePlates,
+        oceanCoverage: oceanCells / this.length,
+        landCoverage: landCells / this.length,
+        wettableCoverage: wettable / this.length,
+        denseOceanFraction: denseOcean / Math.max(1, oceanCells),
+        youngOceanFraction: youngOcean / Math.max(1, oceanCells)
+    };
+};
+
+TectonicEngine.prototype.applyPlanetaryForcing = function(core) {
+    const viscosityFactor = Math.max(0.45, Math.min(1.8, core.mantleViscosity / 1e21));
+    const thermalBoost = Math.max(0.35, Math.min(1.8, core.internalHeat + core.heatFlux));
+    const speedFactor = Math.max(0.4, Math.min(2.0, thermalBoost / Math.sqrt(viscosityFactor)));
+    this.targetSpeedMultiplier = Math.max(0.2, Math.min(3.0, this.targetSpeedMultiplier * 0.9 + speedFactor * 0.1));
+
+    // Ajuste suave en parámetros clave para subducción realista y isostasia estable
+    CONFIG.stressAccumulationRate = Math.max(0.4, Math.min(3.5, ORIGINAL_CONFIG.stressAccumulationRate * speedFactor));
+    CONFIG.mantleInstabilityGrowth = Math.max(0.8, Math.min(6.0, ORIGINAL_CONFIG.mantleInstabilityGrowth * thermalBoost));
+    CONFIG.tau_subduct = Math.max(1.5, Math.min(8.0, ORIGINAL_CONFIG.tau_subduct * viscosityFactor));
+    CONFIG.thermalDiffusivity = Math.max(0.03, Math.min(0.2, ORIGINAL_CONFIG.thermalDiffusivity * (0.8 + thermalBoost * 0.25)));
+};
+
+class PlanetCore {
+    constructor(params) { this.configure(params); }
+    configure(params = {}) {
+        this.name = params.name || 'Aurelia';
+        this.massEarth = Math.max(0.2, Number(params.massEarth) || 1.0);
+        this.radiusEarth = Math.max(0.4, Number(params.radiusEarth) || 1.0);
+        this.distanceAU = Math.max(0.15, Number(params.distanceAU) || 1.0);
+        this.rotationHours = Math.max(4, Number(params.rotationHours) || 24);
+        this.axialTiltDeg = Math.max(0, Math.min(60, Number(params.axialTiltDeg) || 23.4));
+        this.internalActivity = Math.max(0.1, Number(params.internalActivity) || 1.0);
+        this.composition = params.composition || 'silicate';
+
+        this.ageYears = 0;
+        this.gravity = 9.81 * (this.massEarth / (this.radiusEarth * this.radiusEarth));
+        this.cooling = 1.0;
+        this.internalHeat = this.internalActivity;
+        this.coreTemp = 5600 * this.internalActivity;
+        this.mantleTemp = 1800 * this.internalActivity;
+        this.heatFlux = 1.0;
+        this.thermalGradient = 0.0;
+        this.mantleViscosity = 1e21;
+        this.atmosphereRetention = 1.0;
+    }
+    tick(dtYears) {
+        this.ageYears += dtYears;
+        const dtMa = dtYears / 1e6;
+        const sizeBuffer = Math.max(0.45, this.radiusEarth);
+        const compositionHeat = this.composition === 'iron-rich' ? 1.08 : (this.composition === 'water-rich' ? 0.9 : 1.0);
+        const coreCoolingRate = (0.012 / sizeBuffer) * (2 - this.internalActivity) * dtMa * 0.01;
+        const mantleCoolingRate = (0.018 / sizeBuffer) * dtMa * 0.01;
+
+        this.coreTemp = Math.max(1200, this.coreTemp * (1 - coreCoolingRate));
+        this.mantleTemp = Math.max(500, this.mantleTemp * (1 - mantleCoolingRate) + this.coreTemp * 0.00012 * dtMa);
+        this.thermalGradient = Math.max(0, this.coreTemp - this.mantleTemp);
+
+        this.heatFlux = Math.max(0.05, Math.min(2.2, (this.thermalGradient / 4200) * compositionHeat));
+        this.internalHeat = Math.max(0.03, Math.min(2.0, this.internalActivity * this.heatFlux));
+        this.cooling = Math.max(0.03, this.cooling - dtMa * 0.0007 / sizeBuffer);
+
+        // viscosidad del manto ~ exp(1/T) simplificada
+        const normMantle = Math.max(0.2, this.mantleTemp / 1800);
+        this.mantleViscosity = Math.max(3e20, Math.min(4e22, 1e21 * Math.exp((1 / normMantle) - 1)));
+
+        const escapeRisk = Math.max(0, 1 - this.gravity / 8.5) + Math.max(0, (this.coreTemp - 5200) / 7000);
+        this.atmosphereRetention = Math.max(0.08, Math.min(1.2, this.atmosphereRetention - escapeRisk * dtMa * 0.00015));
+    }
+}
+
+class ClimateSystem {
+    constructor(width, height) {
+        this.width = width; this.height = height; this.length = width * height;
+        this.temperature = new Float32Array(this.length);
+        this.humidity = new Float32Array(this.length);
+        this.clouds = new Float32Array(this.length);
+        this.precipitation = new Float32Array(this.length);
+        this.wind = new Float32Array(this.length);
+        this.albedo = new Float32Array(this.length);
+        this.globalTemperature = 273;
+        this.greenhouse = 0.28;
+        this.co2 = 1.0;
+        this.energyImbalance = 0;
+        this.temperature.fill(273);
+        this.humidity.fill(0.2);
+        this.clouds.fill(0.2);
+        this.albedo.fill(0.2);
+    }
+    tick(core, tectonic, hydro, biosphere, forcings) {
+        const elev = tectonic.elevationMap;
+        const stress = tectonic.stressMap;
+        const volcanic = tectonic.volcanicActivityIndex;
+        const yearPhase = (core.ageYears / 365) % 1;
+        const tilt = core.axialTiltDeg * Math.PI / 180;
+        const solarBase = 1361 / Math.max(0.3, core.distanceAU * core.distanceAU);
+        const volcanicAerosol = Math.max(0, forcings.volcanicAerosol || 0);
+        const externalShock = forcings.impactForcing || 0;
+
+        this.co2 = Math.max(0.35, Math.min(3.0, this.co2 + volcanic * 0.0006 - (biosphere?.photosynthesisRate || 0) * 0.0008));
+        this.greenhouse = Math.max(0.08, Math.min(0.75, 0.18 + this.co2 * 0.17 + volcanic * 0.02));
+
+        let tsum = 0, absIn = 0, absOut = 0;
+        for (let y = 0; y < this.height; y++) {
+            const latN = (y / (this.height - 1)) * 2 - 1;
+            const latAbs = Math.abs(latN);
+            const seasonal = 1 + Math.sin((yearPhase + latN * 0.5) * Math.PI * 2) * Math.sin(tilt) * 0.3;
+            const hadley = Math.cos(latN * Math.PI * 1.3);
+            const ferrel = Math.sin(latN * Math.PI * 2.8);
+            for (let x = 0; x < this.width; x++) {
+                const i = y * this.width + x;
+                const altitudeK = Math.max(-1.0, Math.min(1.2, elev[i] / 7000));
+                const water = hydro ? hydro.water[i] : (elev[i] <= 0 ? 1 : 0);
+                const bioAlb = biosphere ? biosphere.biome[i] * 0.06 : 0;
+                const cloudAlb = this.clouds[i] * 0.35;
+                const iceAlb = this.temperature[i] < 268 ? 0.25 : 0;
+                this.albedo[i] = Math.max(0.08, Math.min(0.78, 0.12 + (water > 0.5 ? 0.07 : 0.18) + cloudAlb + iceAlb - bioAlb + volcanicAerosol * 0.12));
+
+                const insolation = solarBase * (1 - latAbs * 0.75) * seasonal;
+                const absorbed = insolation * (1 - this.albedo[i]);
+                const tectonicFlux = core.heatFlux * 16 + volcanic * 18 + Math.min(10, stress[i] * 0.08);
+                const outgoing = 210 + (this.temperature[i] - 240) * (1 - this.greenhouse * 0.7) + externalShock;
+
+                const dE = absorbed + tectonicFlux - outgoing;
+                const thermalInertia = water > 0.35 ? 0.015 : 0.032;
+                const deltaT = dE * thermalInertia - altitudeK * 0.85;
+                const nextT = Math.max(170, Math.min(380, this.temperature[i] * 0.94 + (this.temperature[i] + deltaT) * 0.06));
+                this.temperature[i] = nextT;
+
+                const baseHum = Math.max(0, Math.min(1, (nextT - 240) / 70));
+                const evap = hydro ? hydro.evaporation[i] : (water * 0.2);
+                this.humidity[i] = Math.max(0, Math.min(1, this.humidity[i] * 0.7 + baseHum * 0.2 + evap * 0.3));
+                const circulation = hadley * 0.65 + ferrel * 0.35;
+                this.wind[i] = circulation * (24 / core.rotationHours);
+                this.clouds[i] = Math.max(0, Math.min(1, this.humidity[i] * (0.45 + Math.abs(this.wind[i]) * 0.22) * (1 - volcanicAerosol * 0.25)));
+                this.precipitation[i] = Math.max(0, Math.min(1.5, this.clouds[i] * (0.3 + this.humidity[i] * 0.8 + Math.max(0, this.temperature[i] - 255) * 0.008)));
+
+                tsum += nextT;
+                absIn += absorbed;
+                absOut += outgoing;
+            }
+        }
+        this.globalTemperature = tsum / this.length;
+        this.energyImbalance = (absIn - absOut) / this.length;
+    }
+}
+
+class HydrosphereSystem {
+    constructor(width, height) {
+        this.width = width; this.height = height; this.length = width * height;
+        this.water = new Float32Array(this.length);
+        this.rivers = new Float32Array(this.length);
+        this.evaporation = new Float32Array(this.length);
+        this.condensation = new Float32Array(this.length);
+        this.oceanHeat = new Float32Array(this.length);
+        this.oceanCoverage = 0;
+        this.oceanHeatBuffer = 0;
+        this.runoff = 0;
+        this.water.fill(0.4);
+        this.oceanHeat.fill(275);
+    }
+    tick(core, tectonic, climate) {
+        const elev = tectonic.elevationMap;
+        let ocean = 0, runoffSum = 0, heatSum = 0;
+        for (let y = 1; y < this.height - 1; y++) {
+            for (let x = 1; x < this.width - 1; x++) {
+                const i = y * this.width + x;
+                const temp = climate.temperature[i];
+                const rain = climate.precipitation[i];
+                const isBasin = elev[i] <= 0;
+                const liquid = temp > 250 && temp < 360 && core.atmosphereRetention > 0.18;
+
+                const evap = liquid ? Math.max(0, Math.min(1, (temp - 245) / 90 * (isBasin ? 0.75 : 0.45))) : 0;
+                this.evaporation[i] = evap;
+                this.condensation[i] = Math.max(0, Math.min(1.2, climate.clouds[i] * (0.6 + (290 - temp) / 120)));
+
+                const waterDelta = rain * 0.15 + this.condensation[i] * 0.08 - evap * 0.1;
+                const basinBias = isBasin ? 0.08 : Math.max(-0.12, -elev[i] / 15000);
+                this.water[i] = Math.max(0, Math.min(1, this.water[i] * 0.92 + waterDelta + basinBias));
+
+                const east = i + 1, west = i - 1, north = i - this.width, south = i + this.width;
+                const minN = Math.min(elev[east], elev[west], elev[north], elev[south]);
+                const gradient = Math.max(0, (elev[i] - minN) / 1800);
+                const accum = Math.max(0, this.water[i] + rain * 0.2 - (isBasin ? 0.08 : 0));
+                this.rivers[i] = Math.max(0, Math.min(1.2, gradient * accum));
+                runoffSum += this.rivers[i];
+
+                if (isBasin && this.water[i] > 0.22) {
+                    ocean++;
+                    const heatTarget = temp * 0.65 + 140;
+                    this.oceanHeat[i] = Math.max(180, Math.min(340, this.oceanHeat[i] * 0.97 + heatTarget * 0.03));
+                    heatSum += this.oceanHeat[i];
+                } else {
+                    this.oceanHeat[i] = Math.max(170, this.oceanHeat[i] * 0.98);
+                }
+            }
+        }
+        this.oceanCoverage = ocean / this.length;
+        this.oceanHeatBuffer = ocean > 0 ? (heatSum / ocean) : 0;
+        this.runoff = runoffSum / this.length;
+    }
+}
+
+class BiosphereSystem {
+    constructor(width, height) {
+        this.length = width * height;
+        this.biome = new Float32Array(this.length);
+        this.complexityLevel = 0;
+        this.coverage = 0;
+        this.stabilityClock = 0;
+        this.carbon = 1.0;
+        this.oxygen = 0.2;
+        this.photosynthesisRate = 0;
+        this.massExtinctionPressure = 0;
+    }
+    tick(dtYears, tectonic, climate, hydro) {
+        let cover = 0, photo = 0;
+        const dtMa = dtYears / 1e6;
+        for (let i = 0; i < this.length; i++) {
+            const t = climate.temperature[i];
+            const water = hydro.water[i] > 0.18;
+            const stableGeo = tectonic.stressMap[i] < 52;
+            const light = Math.max(0, Math.min(1, (320 - Math.abs(t - 292)) / 80));
+            const co2Factor = Math.max(0.25, Math.min(1.5, this.carbon));
+            const growth = water ? light * co2Factor * (1 - climate.clouds[i] * 0.25) : 0;
+            const collapse = (!water || t < 248 || t > 334 || !stableGeo) ? 0.022 : 0.006;
+            this.biome[i] = Math.max(0, Math.min(1, this.biome[i] + growth * 0.02 - collapse));
+            if (this.biome[i] > 0.2) cover++;
+            photo += this.biome[i] * growth;
+        }
+
+        this.coverage = cover / this.length;
+        this.photosynthesisRate = photo / this.length;
+        this.carbon = Math.max(0.2, Math.min(3.2, this.carbon + tectonic.volcanicActivityIndex * dtMa * 0.03 - this.photosynthesisRate * dtMa * 0.06));
+        this.oxygen = Math.max(0.03, Math.min(0.4, this.oxygen + this.photosynthesisRate * dtMa * 0.04 - tectonic.volcanicActivityIndex * dtMa * 0.01));
+
+        this.massExtinctionPressure = Math.max(0, Math.min(1.5,
+            Math.max(0, Math.abs(climate.globalTemperature - 288) / 55) + tectonic.volcanicActivityIndex * 0.2));
+
+        if (this.coverage > 0.14 && tectonic.averageStress < 35 && this.massExtinctionPressure < 0.8) this.stabilityClock += dtYears;
+        else this.stabilityClock = Math.max(0, this.stabilityClock - dtYears * 0.8);
+
+        if (this.stabilityClock > 30000000 && this.oxygen > 0.16) this.complexityLevel = 2;
+        else if (this.stabilityClock > 7000000) this.complexityLevel = 1;
+        else this.complexityLevel = 0;
+    }
+}
+
+class IntelligenceSystem {
+    constructor() {
+        this.exists = false;
+        this.stage = 'none';
+        this.stability = 0;
+        this.energy = 0;
+    }
+    tick(dtYears, core, biosphere, climate) {
+        const climateStability = Math.max(0, 1 - Math.abs(climate.globalTemperature - 288) / 100);
+        this.energy = Math.max(0, Math.min(2,
+            (biosphere.coverage * 0.55 + biosphere.oxygen * 0.35 + climateStability * 0.2) * core.internalHeat));
+
+        if (biosphere.complexityLevel >= 2 && this.energy > 0.45 && core.ageYears > 9e8) {
+            this.exists = true;
+            this.stability += dtYears;
+            if (this.stability < 4000000) this.stage = 'tribal';
+            else if (this.stability < 20000000) this.stage = 'industrial';
+            else this.stage = this.energy > 0.8 ? 'expansion' : 'collapse';
+        } else {
+            this.exists = false;
+            this.stage = 'none';
+            this.stability = Math.max(0, this.stability - dtYears * 1.2);
+        }
+    }
+}
+
+class PlanetLifecycleSystem {
+    constructor() {
+        this.stage = 'formation';
+        this.events = [];
+        this.glacialCounter = 0;
+        this.abruptCounter = 0;
+    }
+    tick(core, tectonic, climate, biosphere, intelligence, forcings) {
+        const age = core.ageYears;
+        let next = 'formation';
+        if (age > 5e7) next = 'stabilization';
+        if (age > 4e8 && biosphere.coverage > 0.08 && climate.globalTemperature > 250 && climate.globalTemperature < 320) next = 'habitable';
+        if (age > 1.4e9 && tectonic.activePlates > 3 && core.internalHeat > 0.35) next = 'tectonic-maturity';
+        if (core.internalHeat < 0.32 || age > 4.5e9) next = 'cooling';
+        if (core.internalHeat < 0.08 || climate.globalTemperature < 225 || climate.globalTemperature > 365) next = 'death';
+        this.stage = next;
+
+        this.events = [];
+        if (core.atmosphereRetention < 0.2) this.events.push('atmosphere-loss');
+        if (climate.globalTemperature < 248) { this.events.push('global-freeze'); this.glacialCounter++; } else this.glacialCounter = Math.max(0, this.glacialCounter - 1);
+        if (tectonic.volcanicActivityIndex > 3.2) this.events.push('large-igneous-province');
+        if (biosphere.massExtinctionPressure > 0.95) this.events.push('mass-extinction');
+        if (Math.abs(climate.energyImbalance) > 35) { this.events.push('abrupt-climate-shift'); this.abruptCounter++; } else this.abruptCounter = Math.max(0, this.abruptCounter - 1);
+        if (intelligence.stage === 'collapse') this.events.push('civilizational-collapse');
+        if (forcings.impactForcing > 18) this.events.push('external-impact-winter');
+        if (this.glacialCounter > 20) this.events.push('ice-age-era');
+    }
+}
+
+class PlanetSimulation {
+    constructor(engine) {
+        this.engine = engine;
+        this.core = new PlanetCore({});
+        this.hydro = new HydrosphereSystem(engine.width, engine.height);
+        this.biosphere = new BiosphereSystem(engine.width, engine.height);
+        this.climate = new ClimateSystem(engine.width, engine.height);
+        this.intelligence = new IntelligenceSystem();
+        this.lifecycle = new PlanetLifecycleSystem();
+        this.precisionMode = 'high';
+        this.acc = { tect: 0, climate: 0, life: 0, intel: 0 };
+        this.scales = { tect: 160000, climate: 40000, life: 120000, intel: 260000 };
+        this.forcings = { volcanicAerosol: 0, impactForcing: 0 };
+    }
+    setPrecisionMode(mode = 'high') {
+        this.precisionMode = mode === 'fast' ? 'fast' : 'high';
+        this.scales = this.precisionMode === 'fast'
+            ? { tect: 220000, climate: 70000, life: 180000, intel: 380000 }
+            : { tect: 160000, climate: 40000, life: 120000, intel: 260000 };
+    }
+    configurePlanet(params) {
+        this.core.configure(params);
+    }
+    reset() {
+        this.core.ageYears = 0;
+        this.forcings.volcanicAerosol = 0;
+        this.forcings.impactForcing = 0;
+        this.hydro.water.fill(0);
+        this.hydro.rivers.fill(0);
+        this.hydro.evaporation.fill(0);
+        this.hydro.condensation.fill(0);
+        this.climate.temperature.fill(273);
+        this.climate.humidity.fill(0.2);
+        this.climate.clouds.fill(0.2);
+        this.climate.precipitation.fill(0);
+        this.climate.albedo.fill(0.2);
+        this.biosphere.biome.fill(0);
+        this.biosphere.coverage = 0;
+        this.biosphere.complexityLevel = 0;
+        this.biosphere.carbon = 1.0;
+        this.biosphere.oxygen = 0.2;
+        this.intelligence.stage = 'none';
+        this.intelligence.exists = false;
+        this.lifecycle.stage = 'formation';
+        this.lifecycle.events = [];
+        this.acc = { tect: 0, climate: 0, life: 0, intel: 0 };
+    }
+    applySurfaceFeedback(tectonic) {
+        // muestreo para rendimiento: cada 8 celdas en modo fast, 4 en high
+        const stride = this.precisionMode === 'fast' ? 8 : 4;
+        for (let y = 1; y < this.engine.height - 1; y += stride) {
+            for (let x = 1; x < this.engine.width - 1; x += stride) {
+                const i = y * this.engine.width + x;
+                const erosion = Math.min(0.08, this.hydro.rivers[i] * 0.04 + this.climate.precipitation[i] * 0.015);
+                if (this.engine.currElev[i] > 0) {
+                    this.engine.currThick[i] = Math.max(2, this.engine.currThick[i] - erosion);
+                    this.engine.currDensity[i] = Math.min(CONFIG.rhoOldOcean, this.engine.currDensity[i] + erosion * 0.01);
+                }
+                // deposición en cuencas
+                if (this.engine.currElev[i] < -300) {
+                    this.engine.currThick[i] = Math.min(120, this.engine.currThick[i] + erosion * 0.5);
+                    this.engine.currDensity[i] = Math.max(CONFIG.rhoYoungOcean, this.engine.currDensity[i] - erosion * 0.008);
+                }
+                this.engine.currElev[i] = this.engine.calculateIsostaticElevation(this.engine.currThick[i], this.engine.currDensity[i]);
+            }
+        }
+    }
+    updateGlobalForcings(tectonic) {
+        this.forcings.volcanicAerosol = Math.max(0, Math.min(1.5,
+            this.forcings.volcanicAerosol * 0.92 + tectonic.volcanicActivityIndex * 0.03));
+        this.forcings.impactForcing *= 0.985;
+
+        // impacto externo raro pero determinista por seed
+        if (this.engine.rand() < (this.precisionMode === 'fast' ? 0.000002 : 0.000004)) {
+            this.forcings.impactForcing = 28 + this.engine.rand() * 20;
+        }
+    }
+    tick(dtYears) {
+        const dt = Math.max(1000, Math.min(300000, dtYears));
+        this.core.tick(dt);
+        this.acc.tect += dt;
+        this.acc.climate += dt;
+        this.acc.life += dt;
+        this.acc.intel += dt;
+
+        if (this.acc.tect >= this.scales.tect) {
+            const tectonicSteps = Math.floor(this.acc.tect / this.scales.tect);
+            for (let i = 0; i < tectonicSteps; i++) {
+                this.engine.applyPlanetaryForcing(this.core);
+                this.engine.updatePlateVelocities();
+                const burst = this.scales.tect;
+                const substeps = Math.max(1, Math.floor(burst / CONFIG.fixedDt));
+                for (let j = 0; j < substeps; j++) this.engine.step(CONFIG.fixedDt);
+            }
+            this.acc.tect -= tectonicSteps * this.scales.tect;
+        }
+
+        const tectonic = this.engine.getGlobalOutputs();
+        this.updateGlobalForcings(tectonic);
+
+        if (this.acc.climate >= this.scales.climate) {
+            this.hydro.tick(this.core, tectonic, this.climate);
+            this.climate.tick(this.core, tectonic, this.hydro, this.biosphere, this.forcings);
+            this.applySurfaceFeedback(tectonic);
+            this.acc.climate = 0;
+        }
+        if (this.acc.life >= this.scales.life) {
+            this.biosphere.tick(this.scales.life, tectonic, this.climate, this.hydro);
+            this.acc.life = 0;
+        }
+        if (this.acc.intel >= this.scales.intel) {
+            this.intelligence.tick(this.scales.intel, this.core, this.biosphere, this.climate);
+            this.acc.intel = 0;
+        }
+        this.lifecycle.tick(this.core, tectonic, this.climate, this.biosphere, this.intelligence, this.forcings);
+    }
+    getStatus() {
+        return {
+            name: this.core.name,
+            gravity: this.core.gravity,
+            heat: this.core.internalHeat,
+            mantleViscosity: this.core.mantleViscosity,
+            globalTemp: this.climate.globalTemperature,
+            greenhouse: this.climate.greenhouse,
+            energyImbalance: this.climate.energyImbalance,
+            oceanCoverage: this.hydro.oceanCoverage,
+            oceanHeatBuffer: this.hydro.oceanHeatBuffer,
+            bioCoverage: this.biosphere.coverage,
+            bioLevel: this.biosphere.complexityLevel,
+            oxygen: this.biosphere.oxygen,
+            carbon: this.biosphere.carbon,
+            intelligence: this.intelligence.stage,
+            lifecycle: this.lifecycle.stage,
+            events: this.lifecycle.events,
+            precisionMode: this.precisionMode
+        };
+    }
+}
+
 class Renderer {
     constructor(canvas, engine) {
         this.canvas = canvas;
@@ -1802,6 +2303,42 @@ class Renderer {
                 g = Math.floor(30 + 180 * (1 - Math.abs(tNorm - 0.5) * 1.6));
                 b = Math.floor(220 - 180 * tNorm);
             }
+            else if (window.planetSim && this.mode === 'climate') {
+                const t = window.planetSim.climate.temperature[i] || 0;
+                const h = window.planetSim.climate.humidity[i] || 0;
+                const n = Math.max(0, Math.min(1, (t - 230) / 110));
+                r = Math.floor(30 + 220 * n);
+                g = Math.floor(80 + 140 * h);
+                b = Math.floor(220 - 180 * n);
+            }
+            else if (window.planetSim && this.mode === 'hydro') {
+                const w = window.planetSim.hydro.water[i] || 0;
+                const rv = window.planetSim.hydro.rivers[i] || 0;
+                r = Math.floor(20 + rv * 120);
+                g = Math.floor(40 + w * 110 + rv * 80);
+                b = Math.floor(70 + w * 180);
+            }
+            else if (window.planetSim && this.mode === 'biosphere') {
+                const bcover = window.planetSim.biosphere.biome[i] || 0;
+                r = Math.floor(20 + bcover * 50);
+                g = Math.floor(25 + bcover * 220);
+                b = Math.floor(20 + bcover * 60);
+            }
+            else if (window.planetSim && this.mode === 'intelligence') {
+                const stage = window.planetSim.intelligence.stage;
+                const f = stage === 'tribal' ? 0.35 : stage === 'industrial' ? 0.65 : stage === 'expansion' ? 1 : stage === 'collapse' ? 0.2 : 0;
+                const base = window.planetSim.biosphere.biome[i] || 0;
+                r = Math.floor(30 + f * 220 * base);
+                g = Math.floor(20 + f * 120 * base);
+                b = Math.floor(40 + f * 240 * base);
+            }
+            else if (window.planetSim && this.mode === 'lifecycle') {
+                const stage = window.planetSim.lifecycle.stage;
+                const map = { formation:[140,90,70], stabilization:[120,140,210], habitable:[80,170,90], 'tectonic-maturity':[220,180,80], cooling:[110,130,170], death:[90,70,70] };
+                [r,g,b] = map[stage] || [80,80,80];
+                const shade = Math.max(0.45, Math.min(1.1, (e.currElev[i] + 7000) / 10000));
+                r *= shade; g *= shade; b *= shade;
+            }
 
             data[px] = r; data[px+1] = g; data[px+2] = b; data[px+3] = 255;
         }
@@ -1863,6 +2400,8 @@ document.getElementById('btn-ui-compact').addEventListener('click', () => setUiM
 document.getElementById('btn-ui-large').addEventListener('click', () => setUiMode('large'));
 
 const engine = new TectonicEngine(CONFIG.width, CONFIG.height);
+const planetSim = new PlanetSimulation(engine);
+window.planetSim = planetSim;
 const renderer = new Renderer(canvas, engine);
 const legendBox = document.getElementById('legend-box');
 
@@ -1884,7 +2423,12 @@ const LAYER_LEGENDS = {
     mantle: [['#111111', 'Manto estable'], ['#FF8C00', 'Inestabilidad creciente'], ['#FF0000', 'Inestabilidad crítica']],
     fracture: [['#002255', 'Sin fracturas'], ['#FFD600', 'Fracturación intermedia'], ['#FFFFFF', 'Fracturación extrema']],
     magma: [['#05050A', 'Sin magma'], ['#FF7A1A', 'Magma activo'], ['#FF2A00', 'Acumulación volcánica intensa']],
-    temperature: [['#2A4BFF', 'Litosfera fría / vieja'], ['#F0D34A', 'Transición térmica'], ['#FF4A1F', 'Litosfera caliente / dorsal']]
+    temperature: [['#2A4BFF', 'Litosfera fría / vieja'], ['#F0D34A', 'Transición térmica'], ['#FF4A1F', 'Litosfera caliente / dorsal']],
+    climate: [['#3B82F6', 'Frío y húmedo'], ['#F59E0B', 'Cálido / seco'], ['#E5E7EB', 'Nubosidad']],
+    hydro: [['#0EA5E9', 'Océano y lagos'], ['#38BDF8', 'Ríos superficiales']],
+    biosphere: [['#166534', 'Sin vida'], ['#22C55E', 'Cobertura biótica alta']],
+    intelligence: [['#1F2937', 'Sin inteligencia'], ['#A21CAF', 'Civilización activa']],
+    lifecycle: [['#8B5E3C', 'Formación'], ['#3B82F6', 'Estable/Habitable'], ['#64748B', 'Enfriamiento/Muerte']]
 };
 
 function renderLegend(mode) {
@@ -1892,6 +2436,40 @@ function renderLegend(mode) {
     legendBox.innerHTML = items.map(([color, label]) => (
         `<div class="flex items-center gap-2 mb-1"><span class="inline-block w-3 h-3 rounded-sm border border-slate-600" style="background:${color}"></span><span>${label}</span></div>`
     )).join('') || '<span class="text-slate-400">No legend for this layer.</span>';
+}
+
+function updatePlanetStatus() {
+    const el = document.getElementById('planet-status');
+    if (!el || !window.planetSim) return;
+    const s = window.planetSim.getStatus();
+    el.innerHTML = [
+        `Name: <span class="text-cyan-300">${s.name}</span>`,
+        `Lifecycle: <span class="text-amber-300">${s.lifecycle}</span>`,
+        `Mode: <span class="text-slate-200">${s.precisionMode}</span>`,
+        `g: <span class="text-slate-200">${s.gravity.toFixed(2)} m/s²</span> | η: ${(s.mantleViscosity/1e21).toFixed(2)}e21`,
+        `Tg: <span class="text-red-300">${s.globalTemp.toFixed(1)} K</span> | ΔE: ${s.energyImbalance.toFixed(1)}`,
+        `GH: ${(s.greenhouse*100).toFixed(1)}% | Ocean: ${(s.oceanCoverage*100).toFixed(1)}%`,
+        `Bio L${s.bioLevel}: ${(s.bioCoverage*100).toFixed(1)}% | O₂: ${(s.oxygen*100).toFixed(1)}%`,
+        `CO₂ idx: ${s.carbon.toFixed(2)} | Intel: <span class="text-fuchsia-300">${s.intelligence}</span>`,
+        `Events: <span class="text-orange-200">${s.events.length ? s.events.join(', ') : 'none'}</span>`
+    ].join('<br>');
+}
+
+function applyPlanetFromUI() {
+    const params = {
+        name: document.getElementById('planet-name').value || 'Aurelia',
+        massEarth: parseFloat(document.getElementById('planet-mass').value),
+        radiusEarth: parseFloat(document.getElementById('planet-radius').value),
+        composition: document.getElementById('planet-composition').value,
+        distanceAU: parseFloat(document.getElementById('planet-distance').value),
+        rotationHours: parseFloat(document.getElementById('planet-rotation').value),
+        axialTiltDeg: parseFloat(document.getElementById('planet-tilt').value),
+        internalActivity: parseFloat(document.getElementById('planet-internal').value)
+    };
+    window.planetSim.setPrecisionMode(document.getElementById('sim-precision').value);
+    window.planetSim.configurePlanet(params);
+    window.planetSim.reset();
+    updatePlanetStatus();
 }
 
 let isRunning = false; 
@@ -1965,10 +2543,10 @@ document.getElementById('btn-pause').addEventListener('click', () => {
 document.getElementById('btn-step').addEventListener('click', () => { 
     isRunning = false; 
     cancelAnimationFrame(animationFrameId); 
-    engine.updatePlateVelocities(); 
+    planetSim.tick(CONFIG.fixedDt * 2);
     document.getElementById('lbl-avg-speed').innerText = engine.averageSpeed.toFixed(1);
-    engine.step(CONFIG.fixedDt); 
     document.getElementById('lbl-age').innerText = Math.floor(engine.age).toLocaleString();
+    updatePlanetStatus();
     renderer.render(); 
 });
 
@@ -2021,10 +2599,12 @@ document.getElementById('btn-preset-earth').addEventListener('click', () => gene
 document.getElementById('btn-preset-pangea').addEventListener('click', () => generateRandomValidMap('pangea'));
 document.getElementById('btn-preset-ocean').addEventListener('click', () => generateRandomValidMap('ocean'));
 document.getElementById('btn-run-tests').addEventListener('click', () => runGeoValidationSuite());
+document.getElementById('btn-planet-apply').addEventListener('click', () => applyPlanetFromUI());
 
 function resetSim() {
     engine.age = 0;
     engine.initializeReferenceContinentalMass();
+    planetSim.reset();
     timeAccumulator = 0; 
     const speedSlider = document.getElementById('slider-speed-mult');
     const parsedSpeed = speedSlider ? parseFloat(speedSlider.value) : 1.0;
@@ -2032,6 +2612,7 @@ function resetSim() {
     engine.targetSpeedMultiplier = speedValue;
     engine.currentSpeedMultiplier = engine.targetSpeedMultiplier;
     engine.updatePlateVelocities(); updateValidation();
+    updatePlanetStatus();
     document.getElementById('lbl-avg-speed').innerText = engine.averageSpeed.toFixed(1);
     renderer.render(); document.getElementById('lbl-age').innerText = "0";
 }
@@ -2251,18 +2832,16 @@ canvas.addEventListener('pointerleave', (e) => {
 
 function processAccumulatedTime(simulatedYearsToProcess) {
     timeAccumulator += simulatedYearsToProcess;
-    
-    let stepsTaken = 0;
-    const MAX_STEPS_PER_FRAME = 200; 
-    
-    while (timeAccumulator >= CONFIG.fixedDt && stepsTaken < MAX_STEPS_PER_FRAME) {
-        engine.step(CONFIG.fixedDt);
-        timeAccumulator -= CONFIG.fixedDt;
-        stepsTaken++;
+    const CHUNK = 25000;
+    let guard = 0;
+    while (timeAccumulator >= CHUNK && guard < 300) {
+        planetSim.tick(CHUNK);
+        timeAccumulator -= CHUNK;
+        guard++;
     }
-
-    if (stepsTaken >= MAX_STEPS_PER_FRAME) timeAccumulator = 0; 
+    if (guard >= 300) timeAccumulator = 0;
     document.getElementById('lbl-age').innerText = Math.floor(engine.age).toLocaleString();
+    updatePlanetStatus();
 }
 
 function loop(currentTime) {
@@ -2273,10 +2852,8 @@ function loop(currentTime) {
     
     lastTime = currentTime;
     
-    engine.updatePlateVelocities();
-    document.getElementById('lbl-avg-speed').innerText = engine.averageSpeed.toFixed(1);
-    
     processAccumulatedTime(dtReal * timeScale);
+    document.getElementById('lbl-avg-speed').innerText = engine.averageSpeed.toFixed(1);
     
     renderer.render();
 
@@ -2285,8 +2862,10 @@ function loop(currentTime) {
 }
 
 lastTime = performance.now();
+applyPlanetFromUI();
 engine.updatePlateVelocities();
 document.getElementById('lbl-avg-speed').innerText = engine.averageSpeed.toFixed(1);
+updatePlanetStatus();
 </script>
 </body>
 </html>
